@@ -1,4 +1,6 @@
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+loadEnv({ path: '.env.local' }); // standalone script: load Next's .env.local explicitly
+loadEnv();
 // relative imports: tsx (esbuild) does not resolve tsconfig '@/' path aliases at runtime
 import { db } from '../lib/db';
 import { sections } from '../lib/db/schema';

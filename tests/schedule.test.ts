@@ -84,6 +84,16 @@ describe('schedule engine', () => {
     const r = computePace({ today: '2026-06-29', sections: CURRICULUM, logs, config: CFG });
     expect(r.projectedFinishDate! < '2027-06-01').toBe(true); // weeksElapsed=1 (<2) -> plan-rate fallback
   });
+  it('idealContentMinutes prorates by weekday within week 1', () => {
+    const r = computePace({ today: '2026-06-24', sections: CURRICULUM, logs: [], config: CFG });
+    expect(r.idealContentMinutes).toBe(120); // Mon + Tue completed -> 2 * 60
+    expect(r.notStarted).toBe(false);
+  });
+  it('notStarted is true (and ideal 0) before the start date', () => {
+    const r = computePace({ today: '2026-06-15', sections: CURRICULUM, logs: [], config: CFG });
+    expect(r.notStarted).toBe(true);
+    expect(r.idealContentMinutes).toBe(0);
+  });
   it('currentWeek is 1-based from start', () => {
     expect(currentWeek('2026-06-22', CFG)).toBe(1);
     expect(currentWeek('2026-06-29', CFG)).toBe(2);

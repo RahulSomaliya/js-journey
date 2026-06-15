@@ -24,6 +24,14 @@ export function isWeekend(iso: string): boolean {
 export function fridayOfWeek(startMondayIso: string, week: number): string {
   return addDays(startMondayIso, (week - 1) * 7 + 4);
 }
+// Count Mon–Fri in [startIso, endIso) — end exclusive. 0 if end <= start.
+export function weekdaysBetween(startIso: string, endIso: string): number {
+  const days = diffDays(startIso, endIso);
+  if (days <= 0) return 0;
+  let count = 0;
+  for (let i = 0; i < days; i++) if (!isWeekend(addDays(startIso, i))) count++;
+  return count;
+}
 export function todayInTZ(timeZone: string, now: Date = new Date()): string {
   // en-CA yields YYYY-MM-DD
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);

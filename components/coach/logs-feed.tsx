@@ -1,4 +1,5 @@
 import type { LogEntry, Section } from '@/lib/schedule';
+import { fmtDur } from '@/lib/format';
 
 export function LogsFeed({ logs, sections }: { logs: LogEntry[]; sections: Section[] }) {
   const title = (id: number | null) => sections.find((s) => s.id === id)?.title ?? 'Review';
@@ -12,7 +13,7 @@ export function LogsFeed({ logs, sections }: { logs: LogEntry[]; sections: Secti
               <div className="text-sm font-medium text-ink">{title(l.sectionId)} {l.finishedSection && <span className="text-accent">✓</span>}</div>
               {l.note && <div className="text-sm text-muted">{l.note}</div>}
             </div>
-            <div className="whitespace-nowrap text-right text-sm text-faint">{l.mood} {(l.minutes / 60).toFixed(1)}h<br />{l.studyDate.slice(5)}</div>
+            <div className="whitespace-nowrap text-right text-sm text-faint">{l.mood} {fmtDur(l.minutes)}<br />{l.studyDate.slice(5)}</div>
           </li>
         ))}
         {logs.length === 0 && <li className="py-3 text-sm text-faint">No logs yet.</li>}

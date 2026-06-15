@@ -1,4 +1,4 @@
-import { addDays, diffDays, fridayOfWeek, isWeekend } from '@/lib/date';
+import { addDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
 
 export type SectionKind = 'core' | 'bonus' | 'skip';
 export interface Section { id: number; title: string; videoMinutes: number; kind: SectionKind; sortOrder: number; }
@@ -20,6 +20,7 @@ export interface PaceResult {
   idealContentMinutes: number; idealEffortMinutes: number; gapMinutes: number; daysOffPace: number;
   effortMinutes: number; effortBudgetMinutes: number;
   projectedFinishDate: string | null; weeksElapsed: number;
+  studyDaysElapsed: number; notStarted: boolean;
 }
 
 export function coreSections(sections: Section[]): Section[] {
@@ -74,7 +75,11 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const perWeek = contentMinutesPerWeek(config);
   const total = coreContentMinutes(sections);
   const weeksElapsed = studyWeeksElapsed(today, config);
-  const idealContentMinutes = Math.min(perWeek * weeksElapsed, total);
+  // Prorate the expectation by completed weekdays so "expected by today" grows daily
+  // (instead of jumping only on Fridays) and reads sensibly within a week.
+  const studyDaysElapsed = weekdaysBetween(config.startDate, today);
+  const notStarted = diffDays(config.startDate, today) < 0;
+  const idealContentMinutes = Math.min(total, Math.round((perWeek / config.studyDaysPerWeek) * studyDaysElapsed));
   const contentMinutesDone = contentDoneMinutes(sections, logs);
   const effortMinutes = logs.reduce((s, l) => s + l.minutes, 0);
   const effortBudgetMinutes = Math.round(total * config.multiplier);
@@ -109,7 +114,7 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
     status, contentMinutesDone, contentMinutesTotal: total,
     contentPct: total ? Math.round((contentMinutesDone / total) * 100) : 0,
     idealContentMinutes, idealEffortMinutes, gapMinutes, daysOffPace, effortMinutes, effortBudgetMinutes,
-    projectedFinishDate, weeksElapsed,
+    projectedFinishDate, weeksElapsed, studyDaysElapsed, notStarted,
   };
 }
 export function streak(logs: LogEntry[], today: string, config: ScheduleConfig): number {

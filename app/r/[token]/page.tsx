@@ -32,7 +32,7 @@ export default async function CoachPage() {
       <StuckList items={stuck} />
       <PaceCard pace={pace} target={target} deadline={deadline} />
       <ThisWeek week={week} milestone={thisWeekMilestone} sections={sections} logs={logs} />
-      <Heatmap logs={logs} startDate={PLAN.startDate} weeks={weeks} />
+      <Heatmap logs={logs} startDate={PLAN.startDate} weeks={weeks} today={today} />
       <div className="grid gap-6 md:grid-cols-2">
         <LogsFeed logs={logs} sections={sections} />
         <SendNoteForm />

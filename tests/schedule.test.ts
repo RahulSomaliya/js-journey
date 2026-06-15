@@ -79,6 +79,11 @@ describe('schedule engine', () => {
     const r = computePace({ today: '2026-07-06', sections: CURRICULUM, logs: [], config: CFG });
     expect(r.projectedFinishDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
+  it('projectedFinishDate stays within a sane horizon with sparse early data (no multi-year blowup)', () => {
+    const logs: LogEntry[] = [{ id: '1', studyDate: '2026-06-26', minutes: 60, sectionId: 1, finishedSection: true }];
+    const r = computePace({ today: '2026-06-29', sections: CURRICULUM, logs, config: CFG });
+    expect(r.projectedFinishDate! < '2027-06-01').toBe(true); // weeksElapsed=1 (<2) -> plan-rate fallback
+  });
   it('currentWeek is 1-based from start', () => {
     expect(currentWeek('2026-06-22', CFG)).toBe(1);
     expect(currentWeek('2026-06-29', CFG)).toBe(2);

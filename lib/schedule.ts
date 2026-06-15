@@ -94,8 +94,12 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
       windowContent += minutesById.get(l.sectionId) ?? 0; // ISO strings compare lexically for YYYY-MM-DD
     }
   }
-  const planRatePerDay = perWeek / config.studyDaysPerWeek;
-  const ratePerDay = windowContent > 0 ? windowContent / windowDays : planRatePerDay;
+  // Project in CALENDAR days. Trust the trailing-window rate only once there's enough data
+  // (>= 2 weeks elapsed AND content cleared recently); otherwise fall back to the plan rate.
+  // (Avoids a tiny early sample like "24 min in 14 days" projecting years into the future.)
+  const planRatePerDay = perWeek / 7; // content minutes per calendar day at plan pace
+  const enoughRecentData = weeksElapsed >= 2 && windowContent > 0;
+  const ratePerDay = enoughRecentData ? windowContent / windowDays : planRatePerDay;
   const remaining = Math.max(0, total - contentMinutesDone);
   let projectedFinishDate: string | null = null;
   if (remaining === 0) projectedFinishDate = today;

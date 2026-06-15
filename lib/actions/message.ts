@@ -29,9 +29,9 @@ export async function sendCoachNoteAction(form: FormData) {
   return { ok: true };
 }
 
-export async function resolveStuckAction(form: FormData) {
-  if ((await role()) !== 'coach') return { ok: false };
+// Bound directly to <form action>, so it must return void (not data) per React's form-action contract.
+export async function resolveStuckAction(form: FormData): Promise<void> {
+  if ((await role()) !== 'coach') return;
   await resolveStuck(form.get('id') as string);
   revalidatePath('/r/[token]', 'page');
-  return { ok: true };
 }

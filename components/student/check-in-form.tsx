@@ -47,7 +47,16 @@ export function CheckInForm({ sections, currentSectionId }: { sections: Section[
     });
   }
 
-  if (done) return <div className="rounded-2xl bg-accent-soft p-6 text-center text-accent-deep reveal">{doneMsg}</div>;
+  if (done) return (
+    <div className="relative overflow-hidden rounded-2xl bg-accent-soft p-6 text-center text-accent-deep reveal">
+      <div className="confetti pointer-events-none absolute inset-x-0 top-0">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <span key={i} style={{ left: `${(i / 12) * 100}%`, background: i % 2 ? 'var(--accent)' : 'var(--amber)', animationDelay: `${i * 40}ms` }} />
+        ))}
+      </div>
+      {doneMsg}
+    </div>
+  );
 
   return (
     <form action={submit} className="rounded-2xl border border-hair bg-surface p-5 shadow">

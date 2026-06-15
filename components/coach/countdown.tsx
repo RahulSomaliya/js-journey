@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 export function Countdown({ deadline }: { deadline: string }) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    // current time is client-only (null on server avoids a hydration mismatch); then tick each minute.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);

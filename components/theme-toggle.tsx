@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 export function ThemeToggle() {
   const [dark, setDark] = useState(false);
   useEffect(() => {
+    // Read the theme the no-flash inline script set before paint (client-only); one-time mount sync.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDark(document.documentElement.dataset.theme === 'dark');
   }, []);
   function toggle() {

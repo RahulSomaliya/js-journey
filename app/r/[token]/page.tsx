@@ -1,5 +1,6 @@
 import { getSections, getLogs, openStuckFlags } from '@/lib/db/queries';
-import { computePace, buildMilestones, totalWeeks, currentWeek } from '@/lib/schedule';
+import { computePace, buildMilestones, totalWeeks, currentWeek, currentSection, buildCurriculumRows } from '@/lib/schedule';
+import { LESSONS } from '@/lib/lessons';
 import { PLAN } from '@/lib/config';
 import { todayInTZ, fridayOfWeek } from '@/lib/date';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -8,7 +9,7 @@ import { PaceCard } from '@/components/coach/pace-card';
 import { ThisWeek } from '@/components/coach/this-week';
 import { Heatmap } from '@/components/coach/heatmap';
 import { LogsFeed } from '@/components/coach/logs-feed';
-import { ScheduleTable } from '@/components/coach/schedule-table';
+import { Curriculum } from '@/components/coach/curriculum';
 import { StuckList } from '@/components/coach/stuck-list';
 import { SendNoteForm } from '@/components/coach/send-note-form';
 
@@ -20,24 +21,43 @@ export default async function CoachPage() {
   const pace = computePace({ today, sections, logs, config: PLAN });
   const milestones = buildMilestones(sections, PLAN);
   const weeks = totalWeeks(sections, PLAN);
-  const target = fridayOfWeek(PLAN.startDate, weeks); // 25 Sep 2026 — core complete
-  const deadline = fridayOfWeek(PLAN.startDate, weeks + PLAN.graceWeeks); // 2 Oct 2026 — official deadline
+  const target = fridayOfWeek(PLAN.startDate, weeks); // core complete
+  const deadline = fridayOfWeek(PLAN.startDate, weeks + PLAN.graceWeeks); // official deadline
   const week = currentWeek(today, PLAN);
   const thisWeekMilestone = milestones.find((m) => m.week === week) ?? null;
+  const rows = buildCurriculumRows(sections, logs, milestones, today);
+  const curId = currentSection(sections, logs)?.id ?? null;
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-10 space-y-6">
-      <ThemeToggle />
-      <header className="reveal"><StatusHeadline pace={pace} /></header>
-      <StuckList items={stuck} />
-      <PaceCard pace={pace} target={target} deadline={deadline} />
-      <ThisWeek week={week} milestone={thisWeekMilestone} sections={sections} logs={logs} />
-      <Heatmap logs={logs} startDate={PLAN.startDate} weeks={weeks} today={today} />
-      <div className="grid gap-6 md:grid-cols-2">
+    <main className="mx-auto max-w-6xl px-8 py-10">
+      <div className="mb-8 flex items-center justify-between">
+        <span className="text-sm font-medium text-faint">Mansi&rsquo;s JS Journey</span>
+        <ThemeToggle />
+      </div>
+
+      {/* Zone 1 — Status hero */}
+      <header className="reveal space-y-5">
+        <StatusHeadline pace={pace} />
+        <StuckList items={stuck} />
+        <PaceCard pace={pace} target={target} deadline={deadline} />
+      </header>
+
+      {/* Zone 2 — Right now */}
+      <div className="mt-8 grid grid-cols-2 gap-6">
+        <ThisWeek week={week} milestone={thisWeekMilestone} sections={sections} logs={logs} />
+        <Heatmap logs={logs} startDate={PLAN.startDate} weeks={weeks} today={today} />
+      </div>
+
+      {/* Zone 3 — Full curriculum */}
+      <div className="mt-8">
+        <Curriculum rows={rows} lessons={LESSONS} currentSectionId={curId} />
+      </div>
+
+      {/* Zone 4 — Activity */}
+      <div className="mt-8 grid grid-cols-2 gap-6">
         <LogsFeed logs={logs} sections={sections} />
         <SendNoteForm />
       </div>
-      <ScheduleTable milestones={milestones} logs={logs} sections={sections} today={today} />
     </main>
   );
 }

@@ -3,6 +3,7 @@ import { useState, useTransition } from 'react';
 import { createLogAction } from '@/lib/actions/log';
 import { fmtDur } from '@/lib/format';
 import type { Section } from '@/lib/schedule';
+import { SectionSelect } from './section-select';
 
 const MOODS = [
   { e: '🚀', l: 'Flying' },
@@ -22,7 +23,7 @@ function encouragement(label: string): string {
   return lines[Math.floor(Math.random() * lines.length)];
 }
 
-export function CheckInForm({ sections, currentSectionId }: { sections: Section[]; currentSectionId: number | null }) {
+export function CheckInForm({ sections, currentSectionId, finishedIds }: { sections: Section[]; currentSectionId: number | null; finishedIds: number[] }) {
   const [minutes, setMinutes] = useState(120); // 2h default
   const [sectionOverride, setSectionOverride] = useState<number | null>(null);
   const sectionId = sectionOverride ?? currentSectionId;
@@ -31,6 +32,7 @@ export function CheckInForm({ sections, currentSectionId }: { sections: Section[
   const [finished, setFinished] = useState(false);
   const [done, setDone] = useState(false);
   const [doneMsg, setDoneMsg] = useState('');
+  const [finishedTitle, setFinishedTitle] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   function submit() {
@@ -40,27 +42,42 @@ export function CheckInForm({ sections, currentSectionId }: { sections: Section[
     if (note.trim()) fd.set('note', note.trim());
     if (mood) fd.set('mood', mood);
     if (finished) fd.set('finishedSection', 'on');
+    const celebrate = finished ? (sections.find((s) => s.id === sectionId)?.title ?? null) : null;
     start(async () => {
       const res = await createLogAction(fd);
       if (res.ok) {
+        setFinishedTitle(celebrate);
         setDoneMsg(encouragement(fmtDur(minutes)));
         setDone(true);
         setSectionOverride(null); setNote(''); setMood(null); setFinished(false);
-        setTimeout(() => setDone(false), 4000);
+        setTimeout(() => { setDone(false); setFinishedTitle(null); }, celebrate ? 6500 : 4000);
       }
     });
   }
 
-  if (done) return (
-    <div className="relative overflow-hidden rounded-2xl bg-accent-soft p-8 text-center text-lg font-medium text-accent-deep reveal">
-      <div className="confetti pointer-events-none absolute inset-x-0 top-0">
-        {Array.from({ length: 14 }).map((_, i) => (
-          <span key={i} style={{ left: `${(i / 14) * 100}%`, background: i % 2 ? 'var(--accent)' : 'var(--amber)', animationDelay: `${i * 40}ms` }} />
-        ))}
+  if (done) {
+    const big = finishedTitle != null;
+    const pieces = big ? 28 : 14;
+    return (
+      <div className={`relative overflow-hidden rounded-2xl bg-accent-soft text-center reveal ${big ? 'p-10' : 'p-8'}`}>
+        <div className="confetti pointer-events-none absolute inset-x-0 top-0">
+          {Array.from({ length: pieces }).map((_, i) => (
+            <span key={i} style={{ left: `${(i / pieces) * 100}%`, background: i % 2 ? 'var(--accent)' : 'var(--amber)', animationDelay: `${i * 35}ms` }} />
+          ))}
+        </div>
+        {big ? (
+          <>
+            <div className="text-5xl">🎉</div>
+            <div className="mt-3 font-serif text-2xl font-semibold text-accent-deep">Section complete!</div>
+            <div className="mt-1 text-lg font-medium text-ink">You finished {finishedTitle}</div>
+            <p className="mt-2 text-sm text-muted">That’s a whole chapter of your journey done. So proud of you. 💚</p>
+          </>
+        ) : (
+          <div className="text-lg font-medium text-accent-deep">{doneMsg}</div>
+        )}
       </div>
-      {doneMsg}
-    </div>
-  );
+    );
+  }
 
   return (
     <form action={submit} className="rounded-2xl border border-hair bg-surface p-6 shadow">
@@ -68,12 +85,14 @@ export function CheckInForm({ sections, currentSectionId }: { sections: Section[
       <p className="mt-0.5 text-sm text-faint">Takes about fifteen seconds. 💚</p>
 
       <label className="mt-5 block text-sm font-semibold text-ink-2">What did you work on?</label>
-      <select value={sectionId ?? ''} onChange={(e) => setSectionOverride(Number(e.target.value))}
-        className="mt-2 w-full rounded-lg border border-hair bg-surface-2 p-3 text-ink">
-        {sections.filter((s) => s.kind === 'core').map((s) => (
-          <option key={s.id} value={s.id}>{s.id}. {s.title}</option>
-        ))}
-      </select>
+      <div className="mt-2">
+        <SectionSelect
+          sections={sections.filter((s) => s.kind === 'core')}
+          value={sectionId}
+          onChange={setSectionOverride}
+          finishedIds={finishedIds}
+        />
+      </div>
 
       <label className="mt-5 block text-sm font-semibold text-ink-2">For how long?</label>
       <div className="mt-2 flex items-center justify-center gap-5">

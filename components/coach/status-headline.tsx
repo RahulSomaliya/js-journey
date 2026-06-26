@@ -10,7 +10,7 @@ export function StatusHeadline({ pace }: { pace: PaceResult }) {
   if (pace.notStarted) {
     return (
       <div>
-        <div className="font-serif text-3xl font-semibold text-accent">Starts {fmtDate(PLAN.startDate)}</div>
+        <div className="font-serif text-4xl font-semibold tracking-tight text-accent">Starts {fmtDate(PLAN.startDate)}</div>
         <p className="mt-1 text-muted">
           {pace.contentPct}% complete · {fmtDur(pace.effortMinutes)} logged so far
           {pace.effortMinutes > 0 ? ' — a head start! ✨' : ''}
@@ -23,7 +23,7 @@ export function StatusHeadline({ pace }: { pace: PaceResult }) {
     : pace.status === 'ahead' ? `Ahead by ${gap}` : 'On track';
   return (
     <div>
-      <div className={`font-serif text-3xl font-semibold ${TONE[pace.status]}`}>{msg}</div>
+      <div className={`font-serif text-4xl font-semibold tracking-tight ${TONE[pace.status]}`}>{msg}</div>
       <p className="mt-1 text-muted">{pace.contentPct}% complete · {fmtDur(pace.effortMinutes)} logged vs {fmtDur(pace.idealEffortMinutes)} expected by today</p>
     </div>
   );

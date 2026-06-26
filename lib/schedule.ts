@@ -149,3 +149,46 @@ export function phaseForWeek(week: number): Phase | null {
 export function sectionEffortMinutes(logs: LogEntry[], sectionId: number): number {
   return logs.filter((l) => l.sectionId === sectionId).reduce((sum, l) => sum + l.minutes, 0);
 }
+
+export type SectionStatus = 'done' | 'in_progress' | 'overdue' | 'upcoming';
+
+export interface CurriculumRow {
+  section: Section;
+  status: SectionStatus;
+  minutesLogged: number;
+  targetFriday: string | null;
+}
+
+// Maps every section to a display row: how much has been logged against it, its
+// status, and (for core sections) the Friday it should be finished by. Bonus/skip
+// sections don't gate the schedule, so they carry no target and never go overdue.
+export function buildCurriculumRows(
+  sections: Section[],
+  logs: LogEntry[],
+  milestones: WeeklyMilestone[],
+  today: string,
+): CurriculumRow[] {
+  const done = finishedSectionIds(logs);
+  const currentId = currentSection(sections, logs)?.id ?? null;
+  const ordered = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return ordered.map((section) => {
+    const minutesLogged = sectionEffortMinutes(logs, section.id);
+
+    // A core section inherits the Friday of the earliest milestone whose
+    // throughSectionId reaches it. Bonus/skip sections don't gate → null.
+    let targetFriday: string | null = null;
+    if (section.kind === 'core') {
+      const m = milestones.find((mi) => mi.throughSectionId >= section.id);
+      targetFriday = m?.fridayDate ?? null;
+    }
+
+    let status: SectionStatus;
+    if (done.has(section.id)) status = 'done';
+    else if (section.id === currentId) status = 'in_progress';
+    else if (targetFriday && targetFriday < today) status = 'overdue';
+    else status = 'upcoming';
+
+    return { section, status, minutesLogged, targetFriday };
+  });
+}

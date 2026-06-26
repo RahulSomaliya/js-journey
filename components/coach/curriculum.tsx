@@ -21,49 +21,28 @@ export function Curriculum({
   lessons: Record<number, Lesson[]>;
   currentSectionId: number | null;
 }) {
-  const [open, setOpen] = useState<Set<number>>(new Set()); // collapsed by default
+  // One section open at a time; all collapsed by default.
+  const [openId, setOpenId] = useState<number | null>(null);
   const doneCount = rows.filter((r) => r.status === 'done').length;
   const watched = rows.reduce((n, r) => n + r.minutesLogged, 0);
   const totalVideo = rows.reduce((n, r) => n + r.section.videoMinutes, 0);
-  const allOpen = open.size === rows.length;
-
-  const toggle = (id: number) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const setAll = (openAll: boolean) =>
-    setOpen(openAll ? new Set(rows.map((r) => r.section.id)) : new Set());
 
   return (
     <section className="rounded-2xl border border-hair bg-surface shadow">
-      <div className="flex items-baseline justify-between border-b border-hair px-6 py-4">
-        <div>
-          <h2 className="font-serif text-xl text-ink">Full curriculum</h2>
-          <p className="mt-0.5 text-sm text-muted">
-            {doneCount} / {rows.length} sections done · {fmtDur(watched)} of {fmtDur(totalVideo)} watched
-          </p>
-        </div>
-        <button
-          onClick={() => setAll(!allOpen)}
-          className="text-sm font-medium text-accent transition-colors hover:text-accent-deep"
-        >
-          {allOpen ? 'Collapse all' : 'Expand all'}
-        </button>
+      <div className="border-b border-hair px-6 py-4">
+        <h2 className="font-serif text-xl text-ink">Full curriculum</h2>
+        <p className="mt-0.5 text-sm text-muted">
+          {doneCount} / {rows.length} sections done · {fmtDur(watched)} of {fmtDur(totalVideo)} watched
+        </p>
       </div>
 
       <ul>
         {rows.map((r) => {
-          const isOpen = open.has(r.section.id);
+          const isOpen = openId === r.section.id;
           const isCurrent = r.section.id === currentSectionId;
           const isSkip = r.section.kind === 'skip';
           const meta = STATUS[r.status];
           const items = lessons[r.section.id] ?? [];
-          const pct = r.section.videoMinutes
-            ? Math.min(100, Math.round((r.minutesLogged / r.section.videoMinutes) * 100))
-            : 0;
 
           return (
             <li
@@ -71,8 +50,8 @@ export function Curriculum({
               className={`border-t border-hair ${isCurrent ? 'border-l-2 border-l-accent' : ''} ${isSkip ? 'opacity-60' : ''}`}
             >
               <button
-                onClick={() => toggle(r.section.id)}
-                className="flex w-full items-center gap-4 px-6 py-3 text-left transition-colors hover:bg-surface-2"
+                onClick={() => setOpenId(isOpen ? null : r.section.id)}
+                className="flex w-full items-center gap-5 px-6 py-3.5 text-left transition-colors hover:bg-surface-2"
                 aria-expanded={isOpen}
               >
                 <span className="w-8 shrink-0 text-sm font-semibold text-faint">S{r.section.id}</span>
@@ -82,39 +61,35 @@ export function Curriculum({
                     <span className="ml-2 text-[0.65rem] uppercase tracking-wider text-faint">{r.section.kind}</span>
                   )}
                 </span>
-                <span className="w-28 shrink-0" aria-hidden>
-                  <span className="block h-1 rounded-full bg-hair">
-                    <span className="block h-1 rounded-full bg-accent" style={{ width: `${pct}%` }} />
-                  </span>
-                </span>
-                <span className="w-16 shrink-0 text-right text-sm text-muted">{fmtDur(r.section.videoMinutes)}</span>
+                <span className="shrink-0 text-sm tabular-nums text-muted">{fmtDur(r.section.videoMinutes)}</span>
                 <span className={`w-24 shrink-0 text-right text-sm ${meta.cls}`}>{meta.label}</span>
-                <span className={`shrink-0 text-faint transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
+                <span className={`shrink-0 text-faint transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}>›</span>
               </button>
 
-              {isOpen && (
-                <div className="px-6 pb-4 pl-[4.25rem]">
-                  {items.length === 0 ? (
-                    <p className="text-sm text-faint">Lessons coming soon.</p>
-                  ) : (
-                    <ol className="space-y-1">
-                      {items.map((l, i) => (
-                        <li key={i} className="flex justify-between gap-4 text-sm text-muted">
-                          <span>
-                            <span className="text-faint">{i + 1}.</span> {l.title}
-                          </span>
-                          {l.minutes != null && <span className="shrink-0 text-faint">{fmtDur(l.minutes)}</span>}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                  {r.targetFriday && (
-                    <p className="mt-3 text-[0.7rem] uppercase tracking-wider text-faint">
-                      Target by {fmtDate(r.targetFriday)}
-                    </p>
-                  )}
+              {/* smooth height animation via grid-rows 0fr → 1fr */}
+              <div className={`grid transition-[grid-template-rows] duration-300 ease-out ${isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
+                <div className="overflow-hidden">
+                  <div className="px-6 pb-5 pl-[4.5rem]">
+                    {items.length === 0 ? (
+                      <p className="text-sm text-faint">Lessons coming soon.</p>
+                    ) : (
+                      <ol className="grid grid-cols-2 gap-x-12 gap-y-1.5">
+                        {items.map((l, i) => (
+                          <li key={i} className="flex justify-between gap-4 text-sm text-muted">
+                            <span>
+                              <span className="text-faint">{i + 1}.</span> {l.title}
+                            </span>
+                            {l.minutes != null && <span className="shrink-0 tabular-nums text-faint">{fmtDur(l.minutes)}</span>}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    {r.targetFriday && (
+                      <p className="mt-4 text-[0.7rem] uppercase tracking-wider text-faint">Target by {fmtDate(r.targetFriday)}</p>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
             </li>
           );
         })}

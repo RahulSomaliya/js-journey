@@ -1,7 +1,7 @@
 import { getSections, getLogs, latestCoachNote } from '@/lib/db/queries';
 import {
   computePace, currentSection, streak, coreSections, finishedSectionIds,
-  buildMilestones, currentWeek, phaseForWeek, totalWeeks,
+  buildMilestones, currentWeek, phaseForWeek, totalWeeks, buildCurriculumRows,
 } from '@/lib/schedule';
 import { PLAN } from '@/lib/config';
 import { todayInTZ, fridayOfWeek, diffDays } from '@/lib/date';
@@ -13,6 +13,9 @@ import { CheckInForm } from '@/components/student/check-in-form';
 import { CoachNoteCard } from '@/components/student/coach-note-card';
 import { StuckButton } from '@/components/student/stuck-button';
 import { JourneyStats } from '@/components/student/journey-stats';
+import { Roadmap } from '@/components/student/roadmap';
+import { Heatmap } from '@/components/coach/heatmap';
+import { Motivations } from '@/components/student/motivations';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,10 +57,15 @@ export default async function StudentPage() {
   const daysToDeadline = diffDays(today, deadline);
   const subline = SUBLINES[Math.abs(diffDays('2026-01-01', today)) % SUBLINES.length];
   const name = process.env.STUDENT_NAME ?? 'there';
+  const coachName = process.env.COACH_NAME ?? 'your coach';
+  const rows = buildCurriculumRows(sections, logs, milestones, today);
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-8 sm:py-12">
-      <ThemeToggle />
+    <main className="mx-auto max-w-6xl px-8 py-12">
+      <div className="mb-6 flex justify-end">
+        <ThemeToggle />
+      </div>
+
       <header className="reveal">
         <p className="text-sm text-faint">{greeting(PLAN.timeZone)}, {name} 👋</p>
         <h1 className="mt-1 font-serif text-4xl font-semibold leading-tight text-ink">Today&apos;s focus</h1>
@@ -65,15 +73,21 @@ export default async function StudentPage() {
         <p className="mt-2 max-w-xl text-muted">{subline}</p>
       </header>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-8">
+      {note && (
+        <div className="mt-6">
+          <CoachNoteCard note={note} coachName={coachName} />
+        </div>
+      )}
+
+      <div className="mt-8 grid grid-cols-12 items-start gap-8">
         {/* left — the action */}
-        <div className="space-y-6 reveal">
-          <CheckInForm sections={sections} currentSectionId={cur?.id ?? null} />
+        <div className="col-span-7 space-y-6 reveal">
+          <CheckInForm sections={sections} currentSectionId={cur?.id ?? null} finishedIds={[...doneIds]} />
           <StuckButton sectionId={cur?.id ?? null} />
         </div>
 
         {/* right — encouragement + context */}
-        <div className="space-y-6 reveal">
+        <div className="col-span-5 space-y-6 reveal">
           <div className="flex items-center gap-5 rounded-2xl border border-hair bg-surface p-5 shadow">
             <ProgressRing pct={pace.contentPct} label="of course" />
             <div className="space-y-2">
@@ -91,8 +105,17 @@ export default async function StudentPage() {
             milestone={milestone}
             daysToDeadline={daysToDeadline}
           />
-          <CoachNoteCard note={note} />
         </div>
+      </div>
+
+      {/* your study streak */}
+      <div className="mt-8">
+        <Heatmap logs={logs} startDate={PLAN.startDate} weeks={weeks} today={today} streakDays={days} center={<Motivations />} />
+      </div>
+
+      {/* your roadmap */}
+      <div className="mt-8">
+        <Roadmap rows={rows} currentSectionId={cur?.id ?? null} />
       </div>
     </main>
   );

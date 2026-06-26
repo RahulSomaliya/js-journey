@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LogEntry } from '@/lib/schedule';
 import { addDays, dayOfWeek, diffDays } from '@/lib/date';
 import { fmtDur } from '@/lib/format';
@@ -28,12 +29,14 @@ export function Heatmap({
   weeks,
   today,
   streakDays,
+  center,
 }: {
   logs: LogEntry[];
   startDate: string;
   weeks: number;
   today: string;
   streakDays: number;
+  center?: ReactNode;
 }) {
   const byDate = new Map<string, number>();
   for (const l of logs) byDate.set(l.studyDate, (byDate.get(l.studyDate) ?? 0) + l.minutes);
@@ -110,6 +113,9 @@ export function Heatmap({
             </div>
           </div>
         </div>
+
+        {/* optional centre slot (e.g. shuffling motivations on the student view) */}
+        {center && <div className="flex flex-1 justify-center px-8 text-center">{center}</div>}
 
         {/* summary — uses the horizontal space */}
         <div className="flex gap-8 border-l border-hair pl-8">

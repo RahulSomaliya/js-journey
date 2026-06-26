@@ -4,7 +4,7 @@ import { fmtDur } from '@/lib/format';
 export function LogsFeed({ logs, sections }: { logs: LogEntry[]; sections: Section[] }) {
   const title = (id: number | null) => sections.find((s) => s.id === id)?.title ?? 'Review';
   return (
-    <div className="rounded-2xl border border-hair bg-surface p-5 shadow">
+    <div className="rounded-2xl border border-hair bg-surface p-5">
       <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-faint">Recent logs</div>
       <ul className="mt-3 divide-y divide-hair">
         {logs.slice(0, 12).map((l) => (

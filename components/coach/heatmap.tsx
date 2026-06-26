@@ -17,7 +17,7 @@ export function Heatmap({ logs, startDate, weeks, today }: { logs: LogEntry[]; s
   const cell = (min: number) => (min === 0 ? 'var(--hair)' : min < 60 ? 'var(--accent-soft)' : min < 150 ? 'var(--accent)' : 'var(--accent-deep)');
   const swatch = ['var(--hair)', 'var(--accent-soft)', 'var(--accent)', 'var(--accent-deep)'];
   return (
-    <div className="rounded-2xl border border-hair bg-surface p-5 shadow">
+    <div className="rounded-2xl border border-hair bg-surface p-5">
       <div className="flex items-center justify-between">
         <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-faint">Study days</div>
         <div className="flex items-center gap-1 text-[0.65rem] text-faint">

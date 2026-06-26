@@ -10,7 +10,7 @@ export function ThisWeek({ week, milestone, sections, logs }: { week: number; mi
   const curEffort = cur ? sectionEffortMinutes(logs, cur.id) : 0;
   const curBudget = cur ? Math.round(cur.videoMinutes * PLAN.multiplier) : 0;
   return (
-    <div className="rounded-2xl border border-hair bg-surface p-5 shadow">
+    <div className="rounded-2xl border border-hair bg-surface p-5">
       <div className="flex items-baseline justify-between">
         <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-faint">This week · Week {week || '—'}</div>
         {phase && <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-accent">Phase {phase.n}: {phase.name}</div>}

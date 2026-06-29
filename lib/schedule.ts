@@ -156,7 +156,7 @@ export interface CurriculumRow {
   section: Section;
   status: SectionStatus;
   minutesLogged: number;
-  targetFriday: string | null;
+  targetDate: string | null;
 }
 
 export interface DynamicSchedule {
@@ -232,35 +232,28 @@ export function buildDynamicSchedule(
 }
 
 // Maps every section to a display row: how much has been logged against it, its
-// status, and (for core sections) the Friday it should be finished by. Bonus/skip
-// sections don't gate the schedule, so they carry no target and never go overdue.
+// status, and (for current/upcoming core sections) its dynamic target date from
+// `dyn`. Bonus/skip + already-done sections carry no target.
 export function buildCurriculumRows(
   sections: Section[],
   logs: LogEntry[],
-  milestones: WeeklyMilestone[],
+  dyn: DynamicSchedule,
   today: string,
 ): CurriculumRow[] {
   const done = finishedSectionIds(logs);
-  const currentId = currentSection(sections, logs)?.id ?? null;
+  const currentId = dyn.currentSection?.id ?? null;
   const ordered = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return ordered.map((section) => {
     const minutesLogged = sectionEffortMinutes(logs, section.id);
-
-    // A core section inherits the Friday of the earliest milestone whose
-    // throughSectionId reaches it. Bonus/skip sections don't gate → null.
-    let targetFriday: string | null = null;
-    if (section.kind === 'core') {
-      const m = milestones.find((mi) => mi.throughSectionId >= section.id);
-      targetFriday = m?.fridayDate ?? null;
-    }
+    const targetDate = dyn.perSectionDue[section.id] ?? null;
 
     let status: SectionStatus;
     if (done.has(section.id)) status = 'done';
     else if (section.id === currentId) status = 'in_progress';
-    else if (targetFriday && targetFriday < today) status = 'overdue';
+    else if (targetDate && targetDate < today) status = 'overdue';
     else status = 'upcoming';
 
-    return { section, status, minutesLogged, targetFriday };
+    return { section, status, minutesLogged, targetDate };
   });
 }

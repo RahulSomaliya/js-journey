@@ -1,5 +1,5 @@
 import { getSections, getLogs, openStuckFlags } from '@/lib/db/queries';
-import { computePace, buildMilestones, totalWeeks, currentWeek, currentSection, buildCurriculumRows, streak } from '@/lib/schedule';
+import { computePace, buildDynamicSchedule, totalWeeks, currentWeek, buildCurriculumRows, streak } from '@/lib/schedule';
 import { LESSONS } from '@/lib/lessons';
 import { PLAN } from '@/lib/config';
 import { todayInTZ, fridayOfWeek, diffDays } from '@/lib/date';
@@ -20,14 +20,13 @@ export default async function CoachPage() {
   const today = todayInTZ(PLAN.timeZone);
   const [sections, logs, stuck] = await Promise.all([getSections(), getLogs(), openStuckFlags()]);
   const pace = computePace({ today, sections, logs, config: PLAN });
-  const milestones = buildMilestones(sections, PLAN);
+  const dyn = buildDynamicSchedule(sections, logs, PLAN, today);
   const weeks = totalWeeks(sections, PLAN);
   const target = fridayOfWeek(PLAN.startDate, weeks); // core complete
   const deadline = fridayOfWeek(PLAN.startDate, weeks + PLAN.graceWeeks); // official deadline
   const week = currentWeek(today, PLAN);
-  const thisWeekMilestone = milestones.find((m) => m.week === week) ?? null;
-  const rows = buildCurriculumRows(sections, logs, milestones, today);
-  const curId = currentSection(sections, logs)?.id ?? null;
+  const rows = buildCurriculumRows(sections, logs, dyn, today);
+  const curId = dyn.currentSection?.id ?? null;
   const latest = logs[0] ?? null;
   const latestTitle = latest ? (sections.find((s) => s.id === latest.sectionId)?.title ?? 'Review') : '';
   const streakDays = streak(logs, today, PLAN);
@@ -69,7 +68,7 @@ export default async function CoachPage() {
           <PaceCard pace={pace} target={target} deadline={deadline} timelinePct={timelinePct} />
         </div>
         <div className="col-span-4">
-          <ThisWeek week={week} milestone={thisWeekMilestone} sections={sections} logs={logs} />
+          <ThisWeek week={week} dyn={dyn} logs={logs} />
         </div>
       </div>
 

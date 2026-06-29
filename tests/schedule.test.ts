@@ -116,36 +116,29 @@ describe('schedule engine', () => {
 });
 
 describe('buildCurriculumRows', () => {
-  const ms = buildMilestones(CURRICULUM, CFG);
-  it('marks a finished section done, current section in_progress, and rest upcoming (early date)', () => {
+  it('marks finished done, current in_progress, rest upcoming', () => {
     const logs: LogEntry[] = [
       { id: 'a', studyDate: '2026-06-22', minutes: 24, sectionId: 1, finishedSection: true },
       { id: 'b', studyDate: '2026-06-23', minutes: 60, sectionId: 2, finishedSection: false },
     ];
-    const rows = buildCurriculumRows(CURRICULUM, logs, ms, '2026-06-24');
+    const dyn = buildDynamicSchedule(CURRICULUM, logs, CFG, '2026-06-24');
+    const rows = buildCurriculumRows(CURRICULUM, logs, dyn, '2026-06-24');
     const byId = Object.fromEntries(rows.map((r) => [r.section.id, r]));
     expect(byId[1].status).toBe('done');
     expect(byId[1].minutesLogged).toBe(24);
     expect(byId[2].status).toBe('in_progress');
     expect(byId[3].status).toBe('upcoming');
+    expect(byId[2].targetDate).toBe(dyn.currentDueDate); // current section's dynamic date
   });
-  it('marks an unfinished, non-current core section overdue once its target Friday has passed', () => {
-    const logs: LogEntry[] = [
-      { id: 'a', studyDate: '2026-06-22', minutes: 24, sectionId: 1, finishedSection: true },
-    ];
-    // far-future "today" → every later core section's target Friday is in the past
-    const rows = buildCurriculumRows(CURRICULUM, logs, ms, '2026-12-31');
-    const s3 = rows.find((r) => r.section.id === 3)!;
-    expect(s3.status).toBe('overdue');
-    expect(s3.targetFriday).not.toBeNull();
-  });
-  it('gives bonus/skip sections a null targetFriday', () => {
-    const rows = buildCurriculumRows(CURRICULUM, [], ms, '2026-06-24');
-    expect(rows.find((r) => r.section.id === 4)!.targetFriday).toBeNull(); // bonus
-    expect(rows.find((r) => r.section.id === 6)!.targetFriday).toBeNull(); // skip
+  it('gives bonus/skip sections a null targetDate', () => {
+    const dyn = buildDynamicSchedule(CURRICULUM, [], CFG, '2026-06-24');
+    const rows = buildCurriculumRows(CURRICULUM, [], dyn, '2026-06-24');
+    expect(rows.find((r) => r.section.id === 4)!.targetDate).toBeNull(); // bonus
+    expect(rows.find((r) => r.section.id === 6)!.targetDate).toBeNull(); // skip
   });
   it('returns one row per section, in sortOrder', () => {
-    const rows = buildCurriculumRows(CURRICULUM, [], ms, '2026-06-24');
+    const dyn = buildDynamicSchedule(CURRICULUM, [], CFG, '2026-06-24');
+    const rows = buildCurriculumRows(CURRICULUM, [], dyn, '2026-06-24');
     expect(rows).toHaveLength(CURRICULUM.length);
     expect(rows.map((r) => r.section.id)).toEqual(CURRICULUM.map((s) => s.id));
   });

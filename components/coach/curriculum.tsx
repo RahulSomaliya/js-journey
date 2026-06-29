@@ -84,8 +84,8 @@ export function Curriculum({
                         ))}
                       </ol>
                     )}
-                    {r.targetFriday && (
-                      <p className="mt-4 text-[0.7rem] uppercase tracking-wider text-faint">Target by {fmtDate(r.targetFriday)}</p>
+                    {r.targetDate && (
+                      <p className="mt-4 text-[0.7rem] uppercase tracking-wider text-faint">Target by {fmtDate(r.targetDate)}</p>
                     )}
                   </div>
                 </div>

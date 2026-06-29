@@ -5,23 +5,22 @@ import { useEffect, useMemo, useState } from 'react';
 // Adapted from animata.design's typing-text (no deps, no repeat, no mono):
 // an invisible full-text copy reserves the final height so the card doesn't
 // jump line-by-line while an absolutely-positioned copy types over it.
+// All state updates happen inside the interval callback (never synchronously in
+// the effect body), and reduced-motion users get the full text immediately.
 export function TypingText({ text, delay = 26, className }: { text: string; delay?: number; className?: string }) {
   // split on code points so emojis (surrogate pairs) never get cut in half
   const chars = useMemo(() => Array.from(text), [text]);
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    setCount(0);
-    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setCount(chars.length); // no animation — show it all at once
-      return;
-    }
+    const reduced =
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let i = 0;
     const id = setInterval(() => {
-      i += 1;
+      i = reduced ? chars.length : i + 1;
       setCount(i);
       if (i >= chars.length) clearInterval(id);
-    }, delay);
+    }, reduced ? 0 : delay);
     return () => clearInterval(id);
   }, [chars, delay]);
 

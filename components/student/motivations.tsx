@@ -35,6 +35,10 @@ const LINES = [
 ];
 
 export function Motivations() {
+  // Intentional per-request pick: this renders only inside the force-dynamic
+  // student page, so it's re-evaluated on every refresh (fresh quote each load,
+  // stable for the session). Not a client component → no React-Compiler purity concern.
+  // eslint-disable-next-line react-hooks/purity
   const line = LINES[Math.floor(Math.random() * LINES.length)];
   return (
     <figure className="mx-auto max-w-md text-center">

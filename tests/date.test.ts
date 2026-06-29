@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, diffDays, dayOfWeek, isWeekend, fridayOfWeek, todayInTZ } from '@/lib/date';
+import { addDays, addStudyDays, diffDays, dayOfWeek, isWeekend, fridayOfWeek, todayInTZ } from '@/lib/date';
 
 describe('date helpers', () => {
   it('addDays crosses month boundaries', () => {
@@ -27,5 +27,20 @@ describe('date helpers', () => {
     // 2026-06-22T20:00:00Z == 2026-06-23 01:30 IST
     const d = new Date('2026-06-22T20:00:00Z');
     expect(todayInTZ('Asia/Kolkata', d)).toBe('2026-06-23');
+  });
+});
+
+describe('addStudyDays', () => {
+  it('returns the same date for n = 0', () => {
+    expect(addStudyDays('2026-06-26', 0)).toBe('2026-06-26');
+  });
+  it('skips the weekend: Friday + 1 study-day = Monday', () => {
+    expect(addStudyDays('2026-06-26', 1)).toBe('2026-06-29'); // Fri → Mon
+  });
+  it('Monday + 4 study-days = same-week Friday', () => {
+    expect(addStudyDays('2026-06-22', 4)).toBe('2026-06-26');
+  });
+  it('Friday + 5 study-days = next Friday', () => {
+    expect(addStudyDays('2026-06-26', 5)).toBe('2026-07-03');
   });
 });

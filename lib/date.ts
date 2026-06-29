@@ -32,6 +32,16 @@ export function weekdaysBetween(startIso: string, endIso: string): number {
   for (let i = 0; i < days; i++) if (!isWeekend(addDays(startIso, i))) count++;
   return count;
 }
+// Advance n study-days (Mon–Fri) forward from an ISO date. n = 0 returns iso.
+export function addStudyDays(iso: string, n: number): string {
+  let d = iso;
+  let added = 0;
+  while (added < n) {
+    d = addDays(d, 1);
+    if (!isWeekend(d)) added += 1;
+  }
+  return d;
+}
 export function todayInTZ(timeZone: string, now: Date = new Date()): string {
   // en-CA yields YYYY-MM-DD
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);

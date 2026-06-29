@@ -1,4 +1,4 @@
-import { addDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
+import { addDays, addStudyDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
 
 export type SectionKind = 'core' | 'bonus' | 'skip';
 export interface Section { id: number; title: string; videoMinutes: number; kind: SectionKind; sortOrder: number; }
@@ -156,39 +156,104 @@ export interface CurriculumRow {
   section: Section;
   status: SectionStatus;
   minutesLogged: number;
-  targetFriday: string | null;
+  targetDate: string | null;
+}
+
+export interface DynamicSchedule {
+  anchorDate: string;
+  currentSection: Section | null;
+  currentDueDate: string | null;
+  isCurrentOverdue: boolean;
+  projectedFinishDate: string;
+  originalTargetDate: string;
+  daysDelta: number;
+  perSectionDue: Record<number, string>;
+}
+
+// Dynamic, progress-anchored schedule: deadlines counted forward (in study-days)
+// from the date she finished her last section, crediting time banked early — and
+// re-anchored to today (honest "behind") once a section's deadline has passed.
+export function buildDynamicSchedule(
+  sections: Section[],
+  logs: LogEntry[],
+  config: ScheduleConfig,
+  today: string,
+): DynamicSchedule {
+  const core = coreSections(sections);
+  const done = finishedSectionIds(logs);
+  const perStudyDay = contentMinutesPerWeek(config) / config.studyDaysPerWeek;
+  const originalTargetDate = fridayOfWeek(config.startDate, totalWeeks(sections, config));
+
+  const finishedDates = logs
+    .filter((l) => l.finishedSection && l.sectionId != null)
+    .map((l) => l.studyDate);
+  const anchorDate = finishedDates.length
+    ? finishedDates.reduce((a, b) => (a > b ? a : b))
+    : config.startDate;
+
+  const remaining = core.filter((s) => !done.has(s.id));
+  const current = remaining[0] ?? null;
+
+  if (!current) {
+    return {
+      anchorDate,
+      currentSection: null,
+      currentDueDate: null,
+      isCurrentOverdue: false,
+      projectedFinishDate: anchorDate,
+      originalTargetDate,
+      daysDelta: diffDays(anchorDate, originalTargetDate),
+      perSectionDue: {},
+    };
+  }
+
+  const currentDueAtAnchor = addStudyDays(anchorDate, Math.ceil(current.videoMinutes / perStudyDay));
+  const isCurrentOverdue = today > currentDueAtAnchor;
+  const projAnchor = isCurrentOverdue ? today : anchorDate;
+
+  const perSectionDue: Record<number, string> = {};
+  let cum = 0;
+  for (const s of remaining) {
+    cum += s.videoMinutes;
+    perSectionDue[s.id] = addStudyDays(projAnchor, Math.ceil(cum / perStudyDay));
+  }
+
+  const projectedFinishDate = perSectionDue[remaining[remaining.length - 1].id];
+  return {
+    anchorDate,
+    currentSection: current,
+    currentDueDate: perSectionDue[current.id],
+    isCurrentOverdue,
+    projectedFinishDate,
+    originalTargetDate,
+    daysDelta: diffDays(projectedFinishDate, originalTargetDate),
+    perSectionDue,
+  };
 }
 
 // Maps every section to a display row: how much has been logged against it, its
-// status, and (for core sections) the Friday it should be finished by. Bonus/skip
-// sections don't gate the schedule, so they carry no target and never go overdue.
+// status, and (for current/upcoming core sections) its dynamic target date from
+// `dyn`. Bonus/skip + already-done sections carry no target.
 export function buildCurriculumRows(
   sections: Section[],
   logs: LogEntry[],
-  milestones: WeeklyMilestone[],
+  dyn: DynamicSchedule,
   today: string,
 ): CurriculumRow[] {
   const done = finishedSectionIds(logs);
-  const currentId = currentSection(sections, logs)?.id ?? null;
+  const currentId = dyn.currentSection?.id ?? null;
   const ordered = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return ordered.map((section) => {
     const minutesLogged = sectionEffortMinutes(logs, section.id);
-
-    // A core section inherits the Friday of the earliest milestone whose
-    // throughSectionId reaches it. Bonus/skip sections don't gate → null.
-    let targetFriday: string | null = null;
-    if (section.kind === 'core') {
-      const m = milestones.find((mi) => mi.throughSectionId >= section.id);
-      targetFriday = m?.fridayDate ?? null;
-    }
+    const targetDate = dyn.perSectionDue[section.id] ?? null;
 
     let status: SectionStatus;
     if (done.has(section.id)) status = 'done';
     else if (section.id === currentId) status = 'in_progress';
-    else if (targetFriday && targetFriday < today) status = 'overdue';
+    else if (targetDate && targetDate < today) status = 'overdue';
     else status = 'upcoming';
 
-    return { section, status, minutesLogged, targetFriday };
+    return { section, status, minutesLogged, targetDate };
   });
 }

@@ -1,7 +1,7 @@
 import { getSections, getLogs, latestCoachNote } from '@/lib/db/queries';
 import {
   computePace, currentSection, streak, coreSections, finishedSectionIds,
-  buildMilestones, currentWeek, phaseForWeek, totalWeeks, buildCurriculumRows,
+  buildDynamicSchedule, currentWeek, phaseForWeek, totalWeeks, buildCurriculumRows,
 } from '@/lib/schedule';
 import { PLAN } from '@/lib/config';
 import { todayInTZ, fridayOfWeek, diffDays } from '@/lib/date';
@@ -48,17 +48,16 @@ export default async function StudentPage() {
   const doneIds = finishedSectionIds(logs);
   const sectionsDone = core.filter((s) => doneIds.has(s.id)).length;
 
-  const milestones = buildMilestones(sections, PLAN);
   const weeks = totalWeeks(sections, PLAN);
   const week = Math.max(1, currentWeek(today, PLAN)); // clamp so pre-start shows week 1 context
-  const milestone = milestones.find((m) => m.week === week) ?? null;
+  const dyn = buildDynamicSchedule(sections, logs, PLAN, today);
   const phase = phaseForWeek(week);
   const deadline = fridayOfWeek(PLAN.startDate, weeks + PLAN.graceWeeks);
   const daysToDeadline = diffDays(today, deadline);
   const subline = SUBLINES[Math.abs(diffDays('2026-01-01', today)) % SUBLINES.length];
   const name = process.env.STUDENT_NAME ?? 'there';
   const coachName = process.env.COACH_NAME ?? 'your coach';
-  const rows = buildCurriculumRows(sections, logs, milestones, today);
+  const rows = buildCurriculumRows(sections, logs, dyn, today);
 
   return (
     <main className="mx-auto max-w-6xl px-8 py-12">
@@ -102,7 +101,7 @@ export default async function StudentPage() {
             totalSections={core.length}
             effortMinutes={pace.effortMinutes}
             phase={phase}
-            milestone={milestone}
+            dyn={dyn}
             daysToDeadline={daysToDeadline}
           />
         </div>

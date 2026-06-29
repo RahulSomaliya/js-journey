@@ -1,4 +1,4 @@
-import type { Phase, WeeklyMilestone } from '@/lib/schedule';
+import type { Phase, DynamicSchedule } from '@/lib/schedule';
 import { fmtDur, fmtDate } from '@/lib/format';
 
 function Tile({ label, value }: { label: string; value: string }) {
@@ -11,11 +11,17 @@ function Tile({ label, value }: { label: string; value: string }) {
 }
 
 export function JourneyStats({
-  sectionsDone, totalSections, effortMinutes, phase, milestone, daysToDeadline,
+  sectionsDone, totalSections, effortMinutes, phase, dyn, daysToDeadline,
 }: {
   sectionsDone: number; totalSections: number; effortMinutes: number;
-  phase: Phase | null; milestone: WeeklyMilestone | null; daysToDeadline: number;
+  phase: Phase | null; dyn: DynamicSchedule; daysToDeadline: number;
 }) {
+  const d = dyn.daysDelta;
+  const buffer = d > 0
+    ? { text: `🎉 You're ${d} day${d === 1 ? '' : 's'} ahead — keep banking time!`, cls: 'text-accent' }
+    : d < 0
+      ? { text: `You're ${-d} day${d === -1 ? '' : 's'} behind — one good session brings it back. 💚`, cls: 'text-warn' }
+      : { text: 'Right on schedule. 💚', cls: 'text-muted' };
   return (
     <div className="rounded-2xl border border-hair bg-surface p-5 shadow">
       <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-faint">Your journey</div>
@@ -25,11 +31,17 @@ export function JourneyStats({
         <Tile label="days left" value={String(Math.max(0, daysToDeadline))} />
       </div>
       {phase && <p className="mt-3 text-sm text-muted">You&apos;re in <span className="font-medium text-ink">Phase {phase.n}: {phase.name}</span>.</p>}
-      {milestone && (
+      {dyn.currentSection ? (
         <p className="mt-1 text-sm text-muted">
-          Next checkpoint: <span className="font-medium text-ink">finish Section {milestone.throughSectionId}</span> by {fmtDate(milestone.fridayDate)}.
+          {dyn.isCurrentOverdue ? 'Catch up: finish ' : 'Next checkpoint: finish '}
+          <span className="font-medium text-ink">{dyn.currentSection.title}</span>
+          {dyn.currentDueDate ? <> by <span className="font-medium text-ink">{fmtDate(dyn.currentDueDate)}</span></> : null}.
         </p>
+      ) : (
+        <p className="mt-1 text-sm text-accent">Course complete — you did it! 🎉</p>
       )}
+      <p className="mt-1 text-sm text-muted">On this pace you&apos;ll finish by <span className="font-medium text-ink">{fmtDate(dyn.projectedFinishDate)}</span>.</p>
+      <p className={`mt-2 text-sm font-medium ${buffer.cls}`}>{buffer.text}</p>
     </div>
   );
 }

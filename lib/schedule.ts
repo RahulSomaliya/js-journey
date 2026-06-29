@@ -1,4 +1,4 @@
-import { addDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
+import { addDays, addStudyDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
 
 export type SectionKind = 'core' | 'bonus' | 'skip';
 export interface Section { id: number; title: string; videoMinutes: number; kind: SectionKind; sortOrder: number; }
@@ -157,6 +157,78 @@ export interface CurriculumRow {
   status: SectionStatus;
   minutesLogged: number;
   targetFriday: string | null;
+}
+
+export interface DynamicSchedule {
+  anchorDate: string;
+  currentSection: Section | null;
+  currentDueDate: string | null;
+  isCurrentOverdue: boolean;
+  projectedFinishDate: string;
+  originalTargetDate: string;
+  daysDelta: number;
+  perSectionDue: Record<number, string>;
+}
+
+// Dynamic, progress-anchored schedule: deadlines counted forward (in study-days)
+// from the date she finished her last section, crediting time banked early — and
+// re-anchored to today (honest "behind") once a section's deadline has passed.
+export function buildDynamicSchedule(
+  sections: Section[],
+  logs: LogEntry[],
+  config: ScheduleConfig,
+  today: string,
+): DynamicSchedule {
+  const core = coreSections(sections);
+  const done = finishedSectionIds(logs);
+  const perStudyDay = contentMinutesPerWeek(config) / config.studyDaysPerWeek;
+  const originalTargetDate = fridayOfWeek(config.startDate, totalWeeks(sections, config));
+
+  const finishedDates = logs
+    .filter((l) => l.finishedSection && l.sectionId != null)
+    .map((l) => l.studyDate);
+  const anchorDate = finishedDates.length
+    ? finishedDates.reduce((a, b) => (a > b ? a : b))
+    : config.startDate;
+
+  const remaining = core.filter((s) => !done.has(s.id));
+  const current = remaining[0] ?? null;
+
+  if (!current) {
+    return {
+      anchorDate,
+      currentSection: null,
+      currentDueDate: null,
+      isCurrentOverdue: false,
+      projectedFinishDate: anchorDate,
+      originalTargetDate,
+      daysDelta: diffDays(anchorDate, originalTargetDate),
+      perSectionDue: {},
+    };
+  }
+
+  const currentDueAtAnchor = addStudyDays(anchorDate, Math.ceil(current.videoMinutes / perStudyDay));
+  const isCurrentOverdue = today > currentDueAtAnchor;
+  const projAnchor = isCurrentOverdue ? today : anchorDate;
+
+  const perSectionDue: Record<number, string> = {};
+  let cum = 0;
+  for (const s of remaining) {
+    cum += s.videoMinutes;
+    perSectionDue[s.id] = addStudyDays(projAnchor, Math.ceil(cum / perStudyDay));
+  }
+
+  const projectedFinishDate = perSectionDue[remaining[remaining.length - 1].id];
+  return {
+    anchorDate,
+    currentSection: current,
+    currentDueDate: perSectionDue[current.id],
+    isCurrentOverdue,
+    projectedFinishDate,
+    originalTargetDate,
+    daysDelta: diffDays(projectedFinishDate, originalTargetDate),
+    perSectionDue,
+  };
 }
 
 // Maps every section to a display row: how much has been logged against it, its

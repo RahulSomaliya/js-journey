@@ -1,5 +1,5 @@
 'use client';
-import { useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { createLogAction } from '@/lib/actions/log';
 import { fmtDur } from '@/lib/format';
 import type { Section } from '@/lib/schedule';
@@ -34,6 +34,15 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
   const [doneMsg, setDoneMsg] = useState('');
   const [finishedTitle, setFinishedTitle] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  // auto-grow the note field with its content (and shrink back when it clears)
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = noteRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [note]);
 
   function submit() {
     const fd = new FormData();
@@ -114,8 +123,14 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
         ))}
       </div>
 
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="One line about today (optional)"
-        className="mt-5 w-full rounded-lg border border-hair bg-surface-2 p-3 text-ink placeholder:text-faint" />
+      <textarea
+        ref={noteRef}
+        rows={1}
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="A note about today — write as much as you like (optional)"
+        className="mt-5 block w-full resize-none overflow-hidden rounded-lg border border-hair bg-surface-2 p-3 text-ink leading-relaxed placeholder:text-faint focus:border-accent focus:outline-none"
+      />
 
       <label className="mt-4 flex items-center gap-2 text-sm text-ink-2">
         <input type="checkbox" checked={finished} onChange={(e) => setFinished(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />

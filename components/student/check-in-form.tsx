@@ -4,6 +4,7 @@ import { createLogAction } from '@/lib/actions/log';
 import { fmtDur } from '@/lib/format';
 import type { Section } from '@/lib/schedule';
 import { SectionSelect } from './section-select';
+import { FinishCheckbox } from './finish-checkbox';
 
 const MOODS = [
   { e: '🚀', l: 'Flying' },
@@ -132,10 +133,9 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
         className="mt-5 block w-full resize-none overflow-hidden rounded-lg border border-hair bg-surface-2 p-3 text-ink leading-relaxed placeholder:text-faint focus:border-accent focus:outline-none"
       />
 
-      <label className="mt-4 flex items-center gap-2 text-sm text-ink-2">
-        <input type="checkbox" checked={finished} onChange={(e) => setFinished(e.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
-        I finished this section ✓
-      </label>
+      <div className="mt-4">
+        <FinishCheckbox checked={finished} onChange={setFinished}>I finished this section</FinishCheckbox>
+      </div>
 
       <button type="submit" disabled={pending}
         className="mt-6 w-full rounded-xl bg-accent py-3.5 text-base font-semibold text-white transition hover:bg-accent-deep disabled:opacity-60">

@@ -14,6 +14,14 @@ export async function sendCoachEmail(subject: string, body: string): Promise<voi
   if (error) console.error('resend error', error);
 }
 
+// subject describes the DAY: on a 2nd+ session it carries the running total
+export function logEmailSubject(minutes: number, dayTotalMinutes: number): string {
+  const h = (m: number) => (m / 60).toFixed(1);
+  return dayTotalMinutes > minutes
+    ? `Mansi logged ${h(minutes)}h — ${h(dayTotalMinutes)}h total today`
+    : `Mansi logged ${h(minutes)}h today`;
+}
+
 export function logEmailLine(
   log: { minutes: number; sectionId: number | null; finishedSection: boolean },
   pace: PaceResult,

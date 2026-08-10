@@ -10,7 +10,8 @@ export async function getSections(): Promise<Section[]> {
 }
 
 export async function getLogs(): Promise<LogEntry[]> {
-  const rows = await db.select().from(logEntries).orderBy(desc(logEntries.studyDate));
+  // createdAt tiebreaker: same-day sessions must order newest-first so logs[0] is truly the latest
+  const rows = await db.select().from(logEntries).orderBy(desc(logEntries.studyDate), desc(logEntries.createdAt));
   return rows.map((r) => ({
     id: r.id, studyDate: r.studyDate, minutes: r.minutes, sectionId: r.sectionId,
     finishedSection: r.finishedSection, note: r.note, mood: r.mood, createdAt: r.createdAt.toISOString(),
@@ -19,13 +20,10 @@ export async function getLogs(): Promise<LogEntry[]> {
 
 export interface NewLog { studyDate: string; sectionId: number | null; minutes: number; note?: string | null; mood?: string | null; finishedSection: boolean; }
 export async function insertLog(input: NewLog): Promise<void> {
-  // upsert: a second submit for the same (study_date, section) corrects today's entry instead of duplicating it
+  // append-only: every submit is its own session row; totals are summed at read time
   await db.insert(logEntries).values({
     studyDate: input.studyDate, sectionId: input.sectionId, minutes: input.minutes,
     note: input.note ?? null, mood: input.mood ?? null, finishedSection: input.finishedSection,
-  }).onConflictDoUpdate({
-    target: [logEntries.studyDate, logEntries.sectionId],
-    set: { minutes: input.minutes, note: input.note ?? null, mood: input.mood ?? null, finishedSection: input.finishedSection },
   });
 }
 

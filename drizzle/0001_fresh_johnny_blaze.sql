@@ -1,0 +1,1 @@
+ALTER TABLE "log_entries" DROP CONSTRAINT IF EXISTS "uniq_day_section";

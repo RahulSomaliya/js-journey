@@ -57,6 +57,19 @@ export function finishedSectionIds(logs: LogEntry[]): Set<number> {
   for (const l of logs) if (l.finishedSection && l.sectionId != null) ids.add(l.sectionId);
   return ids;
 }
+// a section counts as finished on its EARLIEST finished-row date: with append-only
+// sessions the same section can carry several finished flags, and later duplicates
+// must not move when it "really" finished
+function earliestFinishDates(logs: LogEntry[]): Map<number, string> {
+  const m = new Map<number, string>();
+  for (const l of logs) {
+    if (l.finishedSection && l.sectionId != null) {
+      const prev = m.get(l.sectionId);
+      if (!prev || l.studyDate < prev) m.set(l.sectionId, l.studyDate);
+    }
+  }
+  return m;
+}
 export function currentSection(sections: Section[], logs: LogEntry[]): Section | null {
   const done = finishedSectionIds(logs);
   return coreSections(sections).find((s) => !done.has(s.id)) ?? null;
@@ -93,11 +106,12 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const windowDays = 14;
   const windowStart = addDays(today, -(windowDays - 1));
   const minutesById = new Map(coreSections(sections).map((s) => [s.id, s.videoMinutes]));
+  // a section is credited to the window only if it was GENUINELY finished inside it —
+  // earliest finished row wins, so duplicate finish flags (append-only sessions) can't inflate the rate
+  const finishDates = earliestFinishDates(logs);
   let windowContent = 0;
-  for (const l of logs) {
-    if (l.finishedSection && l.sectionId != null && l.studyDate >= windowStart && l.studyDate <= today) {
-      windowContent += minutesById.get(l.sectionId) ?? 0; // ISO strings compare lexically for YYYY-MM-DD
-    }
+  for (const [id, d] of finishDates) {
+    if (d >= windowStart && d <= today) windowContent += minutesById.get(id) ?? 0; // ISO strings compare lexically
   }
   // Project in CALENDAR days. Trust the trailing-window rate only once there's enough data
   // (>= 2 weeks elapsed AND content cleared recently); otherwise fall back to the plan rate.
@@ -184,11 +198,11 @@ export function buildDynamicSchedule(
   const perStudyDay = contentMinutesPerWeek(config) / config.studyDaysPerWeek;
   const originalTargetDate = fridayOfWeek(config.startDate, totalWeeks(sections, config));
 
-  const finishedDates = logs
-    .filter((l) => l.finishedSection && l.sectionId != null)
-    .map((l) => l.studyDate);
-  const anchorDate = finishedDates.length
-    ? finishedDates.reduce((a, b) => (a > b ? a : b))
+  // per-section earliest finish, then the max across sections: duplicate finished
+  // rows on later dates (stale tab, resubmit) can't drag the anchor forward
+  const finishDates = earliestFinishDates(logs);
+  const anchorDate = finishDates.size
+    ? [...finishDates.values()].reduce((a, b) => (a > b ? a : b))
     : config.startDate;
 
   const remaining = core.filter((s) => !done.has(s.id));

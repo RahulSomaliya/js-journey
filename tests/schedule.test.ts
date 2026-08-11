@@ -85,6 +85,62 @@ describe('schedule engine', () => {
     const r = computePace({ today: '2026-06-29', sections: CURRICULUM, logs, config: CFG });
     expect(r.projectedFinishDate! < '2027-06-01').toBe(true); // weeksElapsed=1 (<2) -> plan-rate fallback
   });
+  it('computePace: duplicate finished rows for one section do not inflate the trailing-window rate', () => {
+    // same section finished on two rows (possible once sessions are append-only):
+    // its videoMinutes must count ONCE in the 14-day window, so the projection matches the single-row case
+    const one: LogEntry[] = [
+      { id: 'a', studyDate: '2026-07-15', minutes: 150, sectionId: 1, finishedSection: true },
+    ];
+    const two: LogEntry[] = [
+      ...one,
+      { id: 'b', studyDate: '2026-07-15', minutes: 60, sectionId: 1, finishedSection: true },
+    ];
+    const today = '2026-07-20'; // weeksElapsed >= 2 -> trailing-window rate is trusted
+    const rOne = computePace({ today, sections: CURRICULUM, logs: one, config: CFG });
+    const rTwo = computePace({ today, sections: CURRICULUM, logs: two, config: CFG });
+    expect(rTwo.projectedFinishDate).toBe(rOne.projectedFinishDate);
+    // pin that the trailing-window path (not the plan-rate fallback) is what's being compared
+    const rEmpty = computePace({ today, sections: CURRICULUM, logs: [], config: CFG });
+    expect(rOne.projectedFinishDate).not.toBe(rEmpty.projectedFinishDate);
+  });
+  it('computePace: a stale duplicate finish inside the window does not re-credit an old section', () => {
+    // section 1 genuinely finished BEFORE the window; a stray second finished row inside
+    // the window (stale tab) must not credit its videoMinutes to the trailing rate
+    const base: LogEntry[] = [
+      { id: 'a', studyDate: '2026-06-26', minutes: 150, sectionId: 1, finishedSection: true },
+    ];
+    const withDup: LogEntry[] = [
+      ...base,
+      { id: 'b', studyDate: '2026-07-15', minutes: 30, sectionId: 1, finishedSection: true },
+    ];
+    const today = '2026-07-20'; // window starts 2026-07-07 — the 06-26 finish is outside it
+    const rBase = computePace({ today, sections: CURRICULUM, logs: base, config: CFG });
+    const rDup = computePace({ today, sections: CURRICULUM, logs: withDup, config: CFG });
+    expect(rDup.projectedFinishDate).toBe(rBase.projectedFinishDate);
+  });
+  it('buildDynamicSchedule: a duplicate later finished row does not shift the anchor', () => {
+    const one: LogEntry[] = [
+      { id: 'a', studyDate: '2026-06-26', minutes: 150, sectionId: 1, finishedSection: true },
+    ];
+    const dup: LogEntry[] = [
+      ...one,
+      { id: 'b', studyDate: '2026-07-10', minutes: 30, sectionId: 1, finishedSection: true },
+    ];
+    const dOne = buildDynamicSchedule(CURRICULUM, one, CFG, '2026-07-13');
+    const dDup = buildDynamicSchedule(CURRICULUM, dup, CFG, '2026-07-13');
+    expect(dOne.anchorDate).toBe('2026-06-26');
+    expect(dDup.anchorDate).toBe('2026-06-26');
+    expect(dDup.currentDueDate).toBe(dOne.currentDueDate);
+  });
+  it('computePace: multiple same-day sessions on one section add their minutes to effort', () => {
+    const logs: LogEntry[] = [
+      { id: 'a', studyDate: '2026-07-15', minutes: 90, sectionId: 1, finishedSection: false },
+      { id: 'b', studyDate: '2026-07-15', minutes: 45, sectionId: 1, finishedSection: false },
+    ];
+    const r = computePace({ today: '2026-07-20', sections: CURRICULUM, logs, config: CFG });
+    expect(r.effortMinutes).toBe(135);
+    expect(sectionEffortMinutes(logs, 1)).toBe(135);
+  });
   it('idealContentMinutes prorates by weekday within week 1', () => {
     const r = computePace({ today: '2026-06-24', sections: CURRICULUM, logs: [], config: CFG });
     expect(r.idealContentMinutes).toBe(120); // Mon + Tue completed -> 2 * 60

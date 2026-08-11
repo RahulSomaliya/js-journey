@@ -6,7 +6,7 @@ import { insertLog, getSections, getLogs } from '@/lib/db/queries';
 import { computePace } from '@/lib/schedule';
 import { PLAN } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
-import { sendCoachEmail, logEmailLine } from '@/lib/email';
+import { sendCoachEmail, logEmailLine, logEmailSubject } from '@/lib/email';
 
 export async function createLogAction(form: FormData): Promise<{ ok: boolean; error?: string }> {
   const role = (await cookies()).get(ROLE_COOKIE)?.value;
@@ -26,7 +26,9 @@ export async function createLogAction(form: FormData): Promise<{ ok: boolean; er
   try {
     const [sections, logs] = await Promise.all([getSections(), getLogs()]);
     const pace = computePace({ today: studyDate, sections, logs, config: PLAN });
-    await sendCoachEmail(`Mansi logged ${(minutes / 60).toFixed(1)}h today`, logEmailLine({ minutes, sectionId, finishedSection }, pace, sections));
+    // subject reflects the DAY, not just this session — logs already include the row inserted above
+    const dayTotal = logs.filter((l) => l.studyDate === studyDate).reduce((s, l) => s + l.minutes, 0);
+    await sendCoachEmail(logEmailSubject(minutes, dayTotal), logEmailLine({ minutes, sectionId, finishedSection }, pace, sections));
   } catch (e) {
     console.error('email failed', e);
   }

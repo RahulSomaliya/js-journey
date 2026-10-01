@@ -6,12 +6,12 @@ export function Roadmap({ rows, currentSectionId }: { rows: CurriculumRow[]; cur
   const done = rows.filter((r) => r.status === 'done').length;
   return (
     <section className="rounded-2xl border border-hair bg-surface p-6 shadow">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="font-serif text-xl font-semibold text-ink">Your roadmap</h2>
         <span className="text-sm text-muted">{done} of {rows.length} sections done — keep going! 💚</span>
       </div>
 
-      <ol className="mt-5 grid grid-cols-3 gap-3">
+      <ol className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {rows.map((r) => {
           const isCurrent = r.section.id === currentSectionId;
           const isDone = r.status === 'done';
@@ -24,12 +24,12 @@ export function Roadmap({ rows, currentSectionId }: { rows: CurriculumRow[]; cur
               <div className="flex items-center gap-2.5">
                 <span
                   className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-semibold ${
-                    isDone ? 'bg-accent text-white' : isCurrent ? 'bg-accent-deep text-white' : 'bg-hair text-faint'
+                    isDone ? 'bg-accent text-on-accent' : isCurrent ? 'bg-accent-deep text-on-accent' : 'bg-hair text-faint'
                   }`}
                 >
-                  {isDone ? '✓' : r.section.id}
+                  {isDone ? '✓' : r.section.sortOrder}
                 </span>
-                <span className={`flex-1 truncate text-sm font-medium ${isCurrent ? 'text-ink' : isDone ? 'text-ink-2' : 'text-muted'}`}>
+                <span title={r.section.title} className={`flex-1 truncate text-sm font-medium ${isCurrent ? 'text-ink' : isDone ? 'text-ink-2' : 'text-muted'}`}>
                   {r.section.title}
                 </span>
               </div>

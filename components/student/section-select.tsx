@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Section } from '@/lib/schedule';
+import { sectionTag } from '@/lib/format';
 
 // Custom, token-styled section picker. Finished sections show a ✓ and can't be
 // re-selected — you only log against what's still ahead of you.
@@ -43,7 +44,7 @@ export function SectionSelect({
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between rounded-lg border border-hair bg-surface-2 p-3 text-left text-ink transition-colors hover:border-hair-strong focus:border-accent focus:outline-none"
       >
-        <span>{selected ? `${selected.id}. ${selected.title}` : 'Choose a section'}</span>
+        <span>{selected ? `${sectionTag(selected.sortOrder)} ${selected.title}` : 'Choose a section'}</span>
         <span className={`text-faint transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
@@ -73,7 +74,7 @@ export function SectionSelect({
                 >
                   <span className={`w-4 shrink-0 ${isDone ? 'text-accent' : 'text-transparent'}`}>✓</span>
                   <span className={isDone ? 'line-through' : ''}>
-                    {s.id}. {s.title}
+                    {sectionTag(s.sortOrder)} {s.title}
                   </span>
                 </button>
               </li>

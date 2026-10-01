@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { CurriculumRow, SectionStatus } from '@/lib/schedule';
 import type { Lesson } from '@/lib/lessons';
-import { fmtDur, fmtDate } from '@/lib/format';
+import { fmtDur, fmtDate, sectionTag } from '@/lib/format';
 
 const STATUS: Record<SectionStatus, { label: string; cls: string }> = {
   done: { label: 'done ✓', cls: 'text-accent' },
@@ -16,15 +16,18 @@ export function Curriculum({
   rows,
   lessons,
   currentSectionId,
+  emptyText = 'Lessons coming soon.',
 }: {
   rows: CurriculumRow[];
   lessons: Record<number, Lesson[]>;
   currentSectionId: number | null;
+  /** shown in an expanded section with no lesson list */
+  emptyText?: string;
 }) {
   // One section open at a time; all collapsed by default.
   const [openId, setOpenId] = useState<number | null>(null);
   const doneCount = rows.filter((r) => r.status === 'done').length;
-  const watched = rows.reduce((n, r) => n + r.minutesLogged, 0);
+  const watched = rows.reduce((n, r) => n + r.minutesLogged, 0); // logged study time, not video watched
   const totalVideo = rows.reduce((n, r) => n + r.section.videoMinutes, 0);
 
   return (
@@ -32,7 +35,7 @@ export function Curriculum({
       <div className="border-b border-hair px-6 py-4">
         <h2 className="font-serif text-xl text-ink">Full curriculum</h2>
         <p className="mt-0.5 text-sm text-muted">
-          {doneCount} / {rows.length} sections done · {fmtDur(watched)} of {fmtDur(totalVideo)} watched
+          {doneCount} / {rows.length} sections done · {fmtDur(watched)} studied · {fmtDur(totalVideo)} of video
         </p>
       </div>
 
@@ -54,8 +57,8 @@ export function Curriculum({
                 className="flex w-full items-center gap-5 px-6 py-3.5 text-left transition-colors hover:bg-surface-2"
                 aria-expanded={isOpen}
               >
-                <span className="w-8 shrink-0 text-sm font-semibold text-faint">S{r.section.id}</span>
-                <span className="flex-1 font-medium text-ink">
+                <span className="w-9 shrink-0 text-sm font-semibold text-faint">{sectionTag(r.section.sortOrder)}</span>
+                <span className="min-w-0 flex-1 font-medium text-ink">
                   {r.section.title}
                   {r.section.kind !== 'core' && (
                     <span className="ml-2 text-[0.65rem] uppercase tracking-wider text-faint">{r.section.kind}</span>
@@ -71,13 +74,13 @@ export function Curriculum({
                 <div className="overflow-hidden">
                   <div className="px-6 pb-5 pl-[4.5rem]">
                     {items.length === 0 ? (
-                      <p className="text-sm text-faint">Lessons coming soon.</p>
+                      <p className="text-sm text-faint">{emptyText}</p>
                     ) : (
                       <ol className="grid grid-cols-2 gap-x-12 gap-y-1.5">
                         {items.map((l, i) => (
                           <li key={i} className="flex justify-between gap-4 text-sm text-muted">
                             <span>
-                              <span className="text-faint">{i + 1}.</span> {l.title}
+                              <span className="text-faint">{l.number ?? i + 1}.</span> {l.title}
                             </span>
                             {l.minutes != null && <span className="shrink-0 tabular-nums text-faint">{fmtDur(l.minutes)}</span>}
                           </li>

@@ -34,6 +34,7 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
   const [done, setDone] = useState(false);
   const [doneMsg, setDoneMsg] = useState('');
   const [finishedTitle, setFinishedTitle] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   // auto-grow the note field with its content (and shrink back when it clears)
@@ -53,15 +54,18 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
     if (mood) fd.set('mood', mood);
     if (finished) fd.set('finishedSection', 'on');
     const celebrate = finished ? (sections.find((s) => s.id === sectionId)?.title ?? null) : null;
+    setError(null);
     start(async () => {
       const res = await createLogAction(fd);
-      if (res.ok) {
-        setFinishedTitle(celebrate);
-        setDoneMsg(encouragement(fmtDur(minutes)));
-        setDone(true);
-        setSectionOverride(null); setNote(''); setMood(null); setFinished(false);
-        setTimeout(() => { setDone(false); setFinishedTitle(null); }, celebrate ? 6500 : 4000);
+      if (!res.ok) {
+        setError(res.error ?? 'Could not save that session — please try again.');
+        return;
       }
+      setFinishedTitle(celebrate);
+      setDoneMsg(encouragement(fmtDur(minutes)));
+      setDone(true);
+      setSectionOverride(null); setNote(''); setMood(null); setFinished(false);
+      setTimeout(() => { setDone(false); setFinishedTitle(null); }, celebrate ? 6500 : 4000);
     });
   }
 
@@ -90,11 +94,10 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
   }
 
   return (
-    <form action={submit} className="rounded-2xl border border-hair bg-surface p-6 shadow">
-      <h2 className="font-serif text-xl font-semibold text-ink">Your daily check-in</h2>
-      <p className="mt-0.5 text-sm text-faint">Takes about fifteen seconds. 💚</p>
-
-      <label className="mt-5 block text-sm font-semibold text-ink-2">What did you work on?</label>
+    // card chrome + heading come from the wrapper (ManualCheckIn) — this is the fallback
+    // for study away from the Course Player
+    <form action={submit}>
+      <label className="block text-sm font-semibold text-ink-2">What did you work on?</label>
       <div className="mt-2">
         <SectionSelect
           sections={sections.filter((s) => s.kind === 'core')}
@@ -137,9 +140,11 @@ export function CheckInForm({ sections, currentSectionId, finishedIds }: { secti
         <FinishCheckbox checked={finished} onChange={setFinished}>I finished this section</FinishCheckbox>
       </div>
 
+      {error && <p role="alert" className="mt-4 text-sm text-warn">{error}</p>}
+
       <button type="submit" disabled={pending}
-        className="mt-6 w-full rounded-xl bg-accent py-3.5 text-base font-semibold text-white transition hover:bg-accent-deep disabled:opacity-60">
-        {pending ? 'Saving…' : 'Log today'}
+        className="mt-6 w-full rounded-xl bg-accent py-3.5 text-base font-semibold text-on-accent transition hover:bg-accent-deep disabled:opacity-60">
+        {pending ? 'Saving…' : 'Log this session'}
       </button>
     </form>
   );

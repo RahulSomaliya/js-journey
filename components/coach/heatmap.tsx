@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { LogEntry } from '@/lib/schedule';
+import type { LogEntry, PlanBreak } from '@/lib/schedule';
 import { addDays, dayOfWeek, diffDays } from '@/lib/date';
 import { fmtDur } from '@/lib/format';
 
@@ -15,6 +15,8 @@ function level(min: number): number {
 }
 
 // Empty → faint border colour; filled levels ramp the accent over the card surface.
+// Plan-break days with no log get the warm amber tint instead (past and future alike).
+const BREAK_FILL = 'color-mix(in srgb, var(--amber) 38%, var(--surface-2))'; // amber-soft alone vanished next to --hair in dark mode
 const FILL = [
   'var(--hair)',
   'color-mix(in srgb, var(--accent) 28%, var(--surface-2))',
@@ -26,14 +28,18 @@ const FILL = [
 export function Heatmap({
   logs,
   startDate,
-  weeks,
+  planEnd,
+  breaks,
   today,
   streakDays,
   center,
 }: {
   logs: LogEntry[];
   startDate: string;
-  weeks: number;
+  /** last day the grid must reach — the plan deadline. Not start + weeks × 7: plan weeks
+   *  are STUDY weeks, and a break (Diwali) makes the plan longer than that in calendar time. */
+  planEnd: string;
+  breaks: readonly PlanBreak[];
   today: string;
   streakDays: number;
   center?: ReactNode;
@@ -44,9 +50,11 @@ export function Heatmap({
   const earliest = logs.reduce((min, l) => (l.studyDate < min ? l.studyDate : min), startDate);
   const anchor = earliest < startDate ? earliest : startDate;
   const renderStart = addDays(anchor, -dayOfWeek(anchor)); // back to the Sunday
-  const planEnd = addDays(startDate, weeks * 7);
   const lastDay = today > planEnd ? today : planEnd;
   const numWeeks = Math.ceil((diffDays(renderStart, lastDay) + 1) / 7);
+  const breakOn = (date: string) => breaks.find((b) => date >= b.start && date <= b.end) ?? null;
+  const renderEnd = addDays(renderStart, numWeeks * 7 - 1);
+  const showsBreak = breaks.some((b) => b.start <= renderEnd && b.end >= renderStart);
 
   const studyDays = byDate.size;
   const totalMin = [...byDate.values()].reduce((a, b) => a + b, 0);
@@ -70,11 +78,18 @@ export function Heatmap({
             <span key={i} className="h-3 w-3 rounded-[3px]" style={{ background: c }} />
           ))}
           more
+          {showsBreak && (
+            <>
+              <span className="ml-2 h-3 w-3 rounded-[3px]" style={{ background: BREAK_FILL }} />
+              break
+            </>
+          )}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-8">
-        <div className="flex gap-2">
+      {/* wraps below lg (phones): graph, then motivation + summary underneath */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-x-8 gap-y-5">
+        <div className="flex max-w-full gap-2 overflow-x-auto">
           {/* day-of-week labels */}
           <div className="flex flex-col gap-1 pt-[20px]">
             {DAY_LABELS.map((d, i) => (
@@ -96,13 +111,15 @@ export function Heatmap({
                     const future = date > today;
                     const min = byDate.get(date) ?? 0;
                     const isToday = date === today;
+                    const onBreak = breakOn(date);
+                    const background = onBreak && min === 0 ? BREAK_FILL : future ? 'var(--surface-2)' : FILL[level(min)];
                     return (
                       <div
                         key={d}
-                        title={`${date}: ${fmtDur(min)}`}
+                        title={onBreak ? `${date}: ${onBreak.label} break${min > 0 ? ` · ${fmtDur(min)}` : ''}` : `${date}: ${fmtDur(min)}`}
                         className="h-3.5 w-3.5 rounded-[3px]"
                         style={{
-                          background: future ? 'var(--surface-2)' : FILL[level(min)],
+                          background,
                           boxShadow: isToday ? 'inset 0 0 0 1.5px var(--accent-deep)' : undefined,
                         }}
                       />
@@ -115,10 +132,10 @@ export function Heatmap({
         </div>
 
         {/* optional centre slot (e.g. shuffling motivations on the student view) */}
-        {center && <div className="flex flex-1 justify-center px-8 text-center">{center}</div>}
+        {center && <div className="flex flex-1 basis-64 justify-center text-center lg:px-8">{center}</div>}
 
         {/* summary — uses the horizontal space */}
-        <div className="flex gap-8 border-l border-hair pl-8">
+        <div className="flex gap-8 lg:border-l lg:border-hair lg:pl-8">
           <div>
             <div className="font-serif text-2xl text-ink">{streakDays}</div>
             <div className="text-[0.7rem] uppercase tracking-wider text-faint">day streak</div>

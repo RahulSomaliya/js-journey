@@ -23,11 +23,12 @@ export function logEmailSubject(minutes: number, dayTotalMinutes: number): strin
 }
 
 export function logEmailLine(
-  log: { minutes: number; sectionId: number | null; finishedSection: boolean },
+  log: { minutes: number; sectionId: number | null; finishedSection: boolean; source?: 'manual' | 'player'; lectureCount?: number },
   pace: PaceResult,
   sections: Section[],
 ): string {
   const s = sections.find((x) => x.id === log.sectionId);
   const status = pace.status === 'on_track' ? 'on track' : pace.status;
-  return `Mansi logged ${(log.minutes / 60).toFixed(1)}h on ${s?.title ?? 'review'}${log.finishedSection ? ' (finished it ✓)' : ''} — ${status}. ${pace.contentPct}% of the course done.`;
+  const via = log.source === 'player' ? ` via the Course Player, ${log.lectureCount ?? 0} lecture${log.lectureCount === 1 ? '' : 's'}` : '';
+  return `Mansi logged ${(log.minutes / 60).toFixed(1)}h on ${s?.title ?? 'review'}${log.finishedSection ? ' (finished it ✓)' : ''}${via} — ${status}. ${pace.contentPct}% of the course done.`;
 }

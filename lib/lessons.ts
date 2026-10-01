@@ -1,4 +1,9 @@
-export type Lesson = { title: string; minutes?: number };
+import type { LogEntry } from '@/lib/schedule';
+import { sectionIdFor, type CourseId } from '@/lib/courses';
+
+// `number` = the lecture's own number in its section (player-derived lists); when
+// absent the coach curriculum numbers the list by position.
+export type Lesson = { title: string; minutes?: number; number?: number };
 
 // Real per-lecture outline for "The Complete JavaScript Course: From Zero to
 // Expert!" (Jonas Schmedtmann, 2025 ES2024/ES2025 edition — last updated 10/2025).
@@ -397,3 +402,24 @@ export const LESSONS: Record<number, Lesson[]> = {
     { title: `Access the Old Course`, minutes: 1 },
   ],
 };
+
+// React has no hand-made outline: the coach curriculum lists, per section, the lectures
+// the Course Player saw her complete (JourneySession.lecturesCompleted), de-duplicated
+// across sessions and in lecture order. Keyed by section id like LESSONS.
+export function playerLessons(course: CourseId, logs: LogEntry[]): Record<number, Lesson[]> {
+  const bySection = new Map<number, Map<number, string>>();
+  for (const l of logs) {
+    for (const lec of l.lecturesCompleted ?? []) {
+      const id = sectionIdFor(course, lec.section);
+      if (id === null) continue; // not a section of this course — nothing to attach it to
+      const lectures = bySection.get(id) ?? new Map<number, string>();
+      if (!lectures.has(lec.lecture)) lectures.set(lec.lecture, lec.title);
+      bySection.set(id, lectures);
+    }
+  }
+  const out: Record<number, Lesson[]> = {};
+  for (const [id, lectures] of bySection) {
+    out[id] = [...lectures].sort((a, b) => a[0] - b[0]).map(([number, title]) => ({ number, title }));
+  }
+  return out;
+}

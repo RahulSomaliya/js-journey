@@ -1,13 +1,16 @@
 'use server';
 import { cookies } from 'next/headers';
-import { revalidatePath } from 'next/cache';
 import { ROLE_COOKIE } from '@/lib/auth';
-import { insertLog, getSections, getLogs } from '@/lib/db/queries';
-import { computePace } from '@/lib/schedule';
-import { PLAN } from '@/lib/config';
+import { insertLog } from '@/lib/db/queries';
+import { ACTIVE_COURSE, getCourse } from '@/lib/courses';
+import { TIME_ZONE } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
-import { sendCoachEmail, logEmailLine, logEmailSubject } from '@/lib/email';
+import { afterLogWritten } from '@/lib/notify';
+import type { NewLog } from '@/lib/schedule';
 
+// Manual check-in — the fallback for study away from the Course Player (player
+// sessions arrive on their own via /api/player/sessions). Always logs against the
+// ACTIVE course; a section from another course (e.g. a stale pre-React tab) is refused.
 export async function createLogAction(form: FormData): Promise<{ ok: boolean; error?: string }> {
   const role = (await cookies()).get(ROLE_COOKIE)?.value;
   if (role !== 'student') return { ok: false, error: 'unauthorized' };
@@ -18,22 +21,16 @@ export async function createLogAction(form: FormData): Promise<{ ok: boolean; er
   const mood = (form.get('mood') as string | null) || null;
   const finishedSection = form.get('finishedSection') === 'on';
   if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) return { ok: false, error: 'invalid minutes' };
-
-  const studyDate = todayInTZ(PLAN.timeZone);
-  await insertLog({ studyDate, sectionId, minutes, note, mood, finishedSection });
-
-  // fire-and-forget email (do not block UX on failure)
-  try {
-    const [sections, logs] = await Promise.all([getSections(), getLogs()]);
-    const pace = computePace({ today: studyDate, sections, logs, config: PLAN });
-    // subject reflects the DAY, not just this session — logs already include the row inserted above
-    const dayTotal = logs.filter((l) => l.studyDate === studyDate).reduce((s, l) => s + l.minutes, 0);
-    await sendCoachEmail(logEmailSubject(minutes, dayTotal), logEmailLine({ minutes, sectionId, finishedSection }, pace, sections));
-  } catch (e) {
-    console.error('email failed', e);
+  const course = ACTIVE_COURSE;
+  if (sectionId != null && !getCourse(course).curriculum.some((s) => s.id === sectionId)) {
+    return { ok: false, error: `section ${sectionId} is not part of ${getCourse(course).shortTitle} — refresh the page` };
   }
 
-  revalidatePath('/m/[token]', 'page');
-  revalidatePath('/r/[token]', 'page');
+  const row: NewLog = {
+    course, studyDate: todayInTZ(TIME_ZONE), sectionId, minutes, note, mood, finishedSection,
+    alsoFinishedIds: [], lecturesCompleted: null, source: 'manual', externalId: null, startedAt: null, endedAt: null,
+  };
+  await insertLog(row);
+  afterLogWritten(row); // revalidate both views + coach email (after the response)
   return { ok: true };
 }

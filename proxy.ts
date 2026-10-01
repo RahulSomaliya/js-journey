@@ -2,7 +2,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { roleFromToken, ROLE_COOKIE } from '@/lib/auth';
 
-export const config = { matcher: ['/m/:token', '/r/:token'] }; // single segment, not :token*
+// single segment, not :token*. Deliberately NOT /api/*: the Course Player API
+// (app/api/player/*) authenticates itself with `Authorization: Bearer <student token>`,
+// and this proxy would 404 it (seg[0] = 'api' is neither 'm' nor 'r'). tests/player-api.test.ts guards it.
+export const config = { matcher: ['/m/:token', '/r/:token'] };
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

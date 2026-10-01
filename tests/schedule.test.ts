@@ -3,6 +3,7 @@ import {
   coreContentMinutes, contentMinutesPerWeek, totalWeeks, buildMilestones,
   finishedSectionIds, currentSection, studyWeeksElapsed, computePace, streak,
   currentWeek, phaseForWeek, sectionEffortMinutes, buildCurriculumRows, buildDynamicSchedule,
+  finishedEffortRatio,
 } from '@/lib/schedule';
 import type { ScheduleConfig, LogEntry } from '@/lib/schedule';
 import { CURRICULUM } from '@/lib/curriculum';
@@ -10,7 +11,7 @@ import { addStudyDays } from '@/lib/date';
 
 const CFG: ScheduleConfig = {
   startDate: '2026-06-22', dailyHours: 2.5, studyDaysPerWeek: 5,
-  multiplier: 2.5, graceWeeks: 1, timeZone: 'Asia/Kolkata',
+  multiplier: 2.5, graceWeeks: 1, timeZone: 'Asia/Kolkata', breaks: [],
 };
 
 describe('schedule engine', () => {
@@ -26,9 +27,9 @@ describe('schedule engine', () => {
   it('buildMilestones: 14 weeks, week 1 ends 2026-06-26, week 14 ends 2026-09-25 at full core', () => {
     const ms = buildMilestones(CURRICULUM, CFG);
     expect(ms).toHaveLength(14);
-    expect(ms[0].fridayDate).toBe('2026-06-26');
+    expect(ms[0].dueDate).toBe('2026-06-26');
     expect(ms[0].cumulativeContentMinutes).toBe(300);
-    expect(ms[13].fridayDate).toBe('2026-09-25');
+    expect(ms[13].dueDate).toBe('2026-09-25');
     expect(ms[13].cumulativeContentMinutes).toBe(4092);
   });
   it('finishedSectionIds collects sections with a finished log', () => {
@@ -152,9 +153,12 @@ describe('schedule engine', () => {
     expect(r.idealContentMinutes).toBe(0);
   });
   it('currentWeek is 1-based from start', () => {
+    expect(currentWeek('2026-06-21', CFG)).toBe(0);
     expect(currentWeek('2026-06-22', CFG)).toBe(1);
+    expect(currentWeek('2026-06-27', CFG)).toBe(1); // the weekend belongs to the week just studied
     expect(currentWeek('2026-06-29', CFG)).toBe(2);
     expect(currentWeek('2026-09-25', CFG)).toBe(14);
+    expect(currentWeek('2026-10-01', CFG)).toBe(15);
   });
   it('phaseForWeek maps weeks to the four phases', () => {
     expect(phaseForWeek(1)!.name).toBe('Foundations');
@@ -205,7 +209,7 @@ describe('buildDynamicSchedule', () => {
     const dyn = buildDynamicSchedule(CURRICULUM, [], CFG, '2026-06-22');
     expect(dyn.currentSection?.id).toBe(1);
     expect(dyn.anchorDate).toBe('2026-06-22');
-    expect(dyn.currentDueDate).toBe(addStudyDays('2026-06-22', 1));
+    expect(dyn.currentDueDate).toBe(addStudyDays('2026-06-22', 1, []));
     expect(dyn.isCurrentOverdue).toBe(false);
     expect(Math.abs(dyn.daysDelta)).toBeLessThanOrEqual(2);
   });
@@ -219,7 +223,7 @@ describe('buildDynamicSchedule', () => {
     expect(dyn.currentSection?.id).toBe(3);
     expect(dyn.anchorDate).toBe('2026-06-26'); // latest completion
     // S3 = 270 video-min / 60 per study-day = 4.5 → ceil 5 study-days from the anchor
-    expect(dyn.currentDueDate).toBe(addStudyDays('2026-06-26', 5));
+    expect(dyn.currentDueDate).toBe(addStudyDays('2026-06-26', 5, []));
     expect(dyn.isCurrentOverdue).toBe(false);
     expect(dyn.daysDelta).toBeGreaterThan(0); // ahead of the original target
   });
@@ -231,7 +235,7 @@ describe('buildDynamicSchedule', () => {
     const dyn = buildDynamicSchedule(CURRICULUM, logs, CFG, '2026-08-15'); // long after S2 was due
     expect(dyn.currentSection?.id).toBe(2);
     expect(dyn.isCurrentOverdue).toBe(true);
-    expect(dyn.currentDueDate).toBe(addStudyDays('2026-08-15', 5)); // fresh, from today
+    expect(dyn.currentDueDate).toBe(addStudyDays('2026-08-15', 5, [])); // fresh, from today
     expect(dyn.daysDelta).toBeLessThan(0); // behind
   });
 
@@ -243,5 +247,54 @@ describe('buildDynamicSchedule', () => {
     expect(dyn.currentSection).toBeNull();
     expect(dyn.currentDueDate).toBeNull();
     expect(dyn.projectedFinishDate).toBe('2026-07-10');
+  });
+});
+
+describe('sections finished mid-session (player rows carry alsoFinishedIds)', () => {
+  const logs: LogEntry[] = [
+    { id: 'm', studyDate: '2026-06-24', minutes: 30, sectionId: 1, finishedSection: true },
+    // a player session spent mostly in S3 that also finished S2 on the way
+    { id: 'p', studyDate: '2026-06-26', minutes: 150, sectionId: 3, finishedSection: false, alsoFinishedIds: [2] },
+  ];
+  it('finishedSectionIds / currentSection count them', () => {
+    expect([...finishedSectionIds(logs)].sort((a, b) => a - b)).toEqual([1, 2]);
+    expect(currentSection(CURRICULUM, logs)!.id).toBe(3);
+  });
+  it('computePace credits their content', () => {
+    const r = computePace({ today: '2026-06-29', sections: CURRICULUM, logs, config: CFG });
+    expect(r.contentMinutesDone).toBe(324); // 24 + 300
+  });
+  it('the dynamic anchor moves to the session that finished them', () => {
+    const dyn = buildDynamicSchedule(CURRICULUM, logs, CFG, '2026-06-29');
+    expect(dyn.anchorDate).toBe('2026-06-26');
+    expect(dyn.currentSection?.id).toBe(3);
+  });
+  it('null alsoFinishedIds (manual rows from the DB) is fine', () => {
+    const rows: LogEntry[] = [{ id: 'x', studyDate: '2026-06-24', minutes: 30, sectionId: 1, finishedSection: true, alsoFinishedIds: null }];
+    expect([...finishedSectionIds(rows)]).toEqual([1]);
+  });
+});
+
+describe('finishedEffortRatio', () => {
+  it('is effort on finished core sections ÷ their video minutes (null until one is finished)', () => {
+    expect(finishedEffortRatio(CURRICULUM, [])).toBeNull();
+    const logs: LogEntry[] = [
+      { id: 'a', studyDate: '2026-06-22', minutes: 40, sectionId: 1, finishedSection: false },
+      { id: 'b', studyDate: '2026-06-23', minutes: 20, sectionId: 1, finishedSection: true }, // S1: 60 / 24
+      { id: 'c', studyDate: '2026-06-24', minutes: 500, sectionId: 2, finishedSection: false }, // S2 unfinished: ignored
+    ];
+    expect(finishedEffortRatio(CURRICULUM, logs)).toBeCloseTo(2.5);
+  });
+});
+
+
+describe('a finished course', () => {
+  it('computePace reports the real finish date (last section finished), not today', () => {
+    const logs: LogEntry[] = CURRICULUM.filter((s) => s.kind === 'core').map((s, i) => ({
+      id: `f${s.id}`, studyDate: i < 10 ? '2026-08-01' : '2026-09-24', minutes: s.videoMinutes, sectionId: s.id, finishedSection: true,
+    }));
+    const r = computePace({ today: '2026-10-14', sections: CURRICULUM, logs, config: CFG });
+    expect(r.contentPct).toBe(100);
+    expect(r.projectedFinishDate).toBe('2026-09-24');
   });
 });

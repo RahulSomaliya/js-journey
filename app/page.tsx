@@ -11,7 +11,7 @@ export default function Cover() {
         Mansi&apos;s <em className="text-accent">JS</em> Journey
       </h1>
       <p className="mt-4 max-w-md text-lg text-muted">
-        A quiet place to track the climb through The Complete JavaScript Course — one day at a time.
+        A quiet place to track the climb — JavaScript done, React next — one day at a time.
       </p>
       <p className="mt-10 text-sm text-faint">This page has no data. Access is by private link.</p>
     </main>

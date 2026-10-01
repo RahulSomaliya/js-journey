@@ -21,24 +21,42 @@ export function isWeekend(iso: string): boolean {
   const d = dayOfWeek(iso);
   return d === 0 || d === 6;
 }
-export function fridayOfWeek(startMondayIso: string, week: number): string {
-  return addDays(startMondayIso, (week - 1) * 7 + 4);
+/** An inclusive run of calendar days with no study — a plan break (ScheduleConfig.breaks). */
+export interface DayRange { start: string; end: string; }
+export function inBreak(iso: string, breaks: readonly DayRange[]): boolean {
+  return breaks.some((b) => iso >= b.start && iso <= b.end); // ISO strings compare lexically
 }
-// Count Mon–Fri in [startIso, endIso) — end exclusive. 0 if end <= start.
-export function weekdaysBetween(startIso: string, endIso: string): number {
+// A study day is Mon–Fri outside every plan break. `breaks` is REQUIRED on every
+// study-day helper on purpose: a call that forgot it would silently count Diwali as
+// study time and show her "behind" for a break the plan promised her.
+export function isStudyDay(iso: string, breaks: readonly DayRange[]): boolean {
+  return !isWeekend(iso) && !inBreak(iso, breaks);
+}
+// Count study days in [startIso, endIso) — end exclusive. 0 if end <= start.
+export function studyDaysBetween(startIso: string, endIso: string, breaks: readonly DayRange[]): number {
   const days = diffDays(startIso, endIso);
-  if (days <= 0) return 0;
   let count = 0;
-  for (let i = 0; i < days; i++) if (!isWeekend(addDays(startIso, i))) count++;
+  for (let i = 0; i < days; i++) if (isStudyDay(addDays(startIso, i), breaks)) count++;
   return count;
 }
-// Advance n study-days (Mon–Fri) forward from an ISO date. n = 0 returns iso.
-export function addStudyDays(iso: string, n: number): string {
+// Advance n study days forward from an ISO date (the start itself never counts). n = 0 returns iso.
+export function addStudyDays(iso: string, n: number, breaks: readonly DayRange[]): string {
   let d = iso;
   let added = 0;
   while (added < n) {
     d = addDays(d, 1);
-    if (!isWeekend(d)) added += 1;
+    if (isStudyDay(d, breaks)) added += 1;
+  }
+  return d;
+}
+// Advance n calendar days forward, not counting break days (weekends DO count) — for
+// rates measured per calendar day, like computePace's projected finish.
+export function addOpenDays(iso: string, n: number, breaks: readonly DayRange[]): string {
+  let d = iso;
+  let added = 0;
+  while (added < n) {
+    d = addDays(d, 1);
+    if (!inBreak(d, breaks)) added += 1;
   }
   return d;
 }

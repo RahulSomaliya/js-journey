@@ -8,7 +8,7 @@ const plex = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], 
 
 export const metadata: Metadata = {
   title: "Mansi's JS Journey",
-  description: 'Daily progress through The Complete JavaScript Course.',
+  description: 'Daily progress through Jonas Schmedtmann’s JavaScript and React courses.',
 };
 
 // Set the theme before first paint to avoid a flash of the wrong theme.

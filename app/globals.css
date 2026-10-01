@@ -4,6 +4,9 @@
   --paper:#f6f3ec; --surface:#fffdf8; --surface-2:#fbf8f1;
   --ink:#1c211b; --ink-2:#34382f; --muted:#5f6358; --faint:#8a8c80;
   --accent:#1d6b57; --accent-deep:#143f33; --accent-soft:#e7efe9;
+  /* text ON an accent / accent-deep fill (buttons, active pills, selection). Never text-white:
+     dark mode's accents are light mint, where white is ~2:1 (AA needs 4.5) — tests/theme-contrast.test.ts */
+  --on-accent:#ffffff;
   --hair:#e4ddcd; --hair-strong:#d6cdb8; --amber:#8a5a12; --amber-soft:#f3ead7;
   --shadow:0 1px 2px rgba(28,33,27,.04),0 8px 28px -16px rgba(28,33,27,.18);
   color-scheme: light;
@@ -12,6 +15,7 @@
   --paper:#161814; --surface:#1d201a; --surface-2:#22251e;
   --ink:#e9eae1; --ink-2:#d3d6ca; --muted:#a2a799; --faint:#767b6d;
   --accent:#5cc4a3; --accent-deep:#8fe0c4; --accent-soft:#1b2c25;
+  --on-accent:#0f1f19; /* 8.0:1 on accent, 11.1:1 on accent-deep */
   --hair:#2c302a; --hair-strong:#3a4035; --amber:#d9a441; --amber-soft:#2c2516;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px -18px rgba(0,0,0,.7);
   color-scheme: dark;
@@ -21,6 +25,7 @@
   --color-paper: var(--paper); --color-surface: var(--surface); --color-surface-2: var(--surface-2);
   --color-ink: var(--ink); --color-ink-2: var(--ink-2); --color-muted: var(--muted); --color-faint: var(--faint);
   --color-accent: var(--accent); --color-accent-deep: var(--accent-deep); --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
   --color-hair: var(--hair); --color-hair-strong: var(--hair-strong);
   /* 'warn'/'warn-soft' map to the reference's amber tokens; named 'warn' to avoid colliding with Tailwind's built-in amber-* scale */
   --color-warn: var(--amber); --color-warn-soft: var(--amber-soft);
@@ -29,7 +34,7 @@
 }
 
 body { background: var(--paper); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
-::selection { background: var(--accent); color:#fff; }
+::selection { background: var(--accent); color: var(--on-accent); }
 
 @media (prefers-reduced-motion: no-preference) {
   .reveal { opacity:0; transform: translateY(12px); animation: rise .7s cubic-bezier(.2,.8,.2,1) forwards; }

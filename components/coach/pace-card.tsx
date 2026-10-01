@@ -1,5 +1,5 @@
-import type { PaceResult } from '@/lib/schedule';
-import { fmtDur } from '@/lib/format';
+import type { PaceResult, ScheduleConfig } from '@/lib/schedule';
+import { fmtDur, fmtDateRange } from '@/lib/format';
 import { Countdown } from './countdown';
 
 function Bar({ label, pct, tone }: { label: string; pct: number; tone: 'accent' | 'neutral' }) {
@@ -22,11 +22,16 @@ export function PaceCard({
   target,
   deadline,
   timelinePct,
+  plan,
+  effortRatio,
 }: {
   pace: PaceResult;
   target: string;
   deadline: string;
   timelinePct: number;
+  plan: ScheduleConfig;
+  /** study time per video minute on FINISHED sections (finishedEffortRatio) */
+  effortRatio: number | null;
 }) {
   const expected = pace.notStarted ? 'not started' : fmtDur(pace.idealContentMinutes);
   const coursePct = Math.round(pace.contentPct);
@@ -66,8 +71,31 @@ export function PaceCard({
         <Bar label="Timeline elapsed" pct={timelinePct} tone="neutral" />
       </div>
 
+      {/* the plan itself, and her real study time against its multiplier */}
+      <div className="mt-6 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t border-hair pt-5 text-sm">
+        <div>
+          <span className="text-faint">Plan</span>{' '}
+          <span className="text-ink-2">
+            {plan.dailyHours} h/day × {plan.studyDaysPerWeek} days · {plan.multiplier}× watch time
+            {plan.breaks.map((b) => ` · ${b.label} break ${fmtDateRange(b.start, b.end)}`).join('')}
+          </span>
+        </div>
+        <div>
+          <span className="text-faint">Finished sections took</span>{' '}
+          {effortRatio === null ? (
+            <span className="text-ink-2">— (none finished yet)</span>
+          ) : (
+            // colour by the SHOWN (2-dp) value: 1.754 reads "1.75×" and must not turn amber vs a 1.75× plan
+            <span className={Number(effortRatio.toFixed(2)) <= plan.multiplier ? 'font-medium text-accent' : 'font-medium text-warn'}>
+              {effortRatio.toFixed(2)}× their video
+            </span>
+          )}{' '}
+          <span className="text-faint">vs {plan.multiplier}× planned</span>
+        </div>
+      </div>
+
       {/* supporting context — quieted */}
-      <div className="mt-6 grid grid-cols-3 gap-6 border-t border-hair pt-5 text-sm">
+      <div className="mt-4 grid grid-cols-3 gap-6 text-sm">
         <div>
           <span className="text-faint">Expected by today</span> <span className="text-ink-2">{expected}</span>
         </div>

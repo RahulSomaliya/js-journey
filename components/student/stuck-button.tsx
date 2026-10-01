@@ -17,7 +17,7 @@ export function StuckButton({ sectionId }: { sectionId: number | null }) {
       className="rounded-xl border border-hair bg-surface-2 p-3"
     >
       <textarea name="body" rows={2} placeholder="What's tripping you up?" className="w-full resize-none bg-transparent text-ink placeholder:text-faint" />
-      <button type="submit" disabled={pending} className="mt-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-white">{pending ? 'Sending…' : 'Send'}</button>
+      <button type="submit" disabled={pending} className="mt-2 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-on-accent">{pending ? 'Sending…' : 'Send'}</button>
     </form>
   );
 }

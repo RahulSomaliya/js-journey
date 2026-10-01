@@ -2,11 +2,20 @@ import type { LogEntry } from '@/lib/schedule';
 import { fmtDur, fmtDate } from '@/lib/format';
 
 export function LatestFromMansi({ log, sectionTitle }: { log: LogEntry | null; sectionTitle: string }) {
+  const player = log?.source === 'player';
+  const lectures = log?.lecturesCompleted?.length ?? 0;
   return (
     <div className="flex h-full flex-col rounded-2xl border border-hair bg-surface p-6 shadow">
       <div className="flex items-center justify-between">
         <div className="text-[0.7rem] font-semibold uppercase tracking-wider text-accent">Latest from Mansi</div>
-        {log && <div className="text-sm text-faint">{fmtDate(log.studyDate)}</div>}
+        {log && (
+          <div className="flex items-center gap-2 text-sm text-faint">
+            <span className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wider ${player ? 'bg-accent-soft text-accent-deep' : 'bg-surface-2'}`}>
+              {player ? '▶ from the player' : '✎ manual check-in'}
+            </span>
+            {fmtDate(log.studyDate)}
+          </div>
+        )}
       </div>
 
       {log ? (
@@ -17,7 +26,9 @@ export function LatestFromMansi({ log, sectionTitle }: { log: LogEntry | null; s
           <div className="mt-auto flex items-center gap-2 pt-5 text-sm">
             {log.mood && <span className="text-base">{log.mood}</span>}
             <span className="font-medium text-ink-2">{sectionTitle}</span>
-            <span className="text-faint">· {fmtDur(log.minutes)}{log.finishedSection ? ' · finished ✓' : ''}</span>
+            <span className="text-faint">
+              · {fmtDur(log.minutes)}{player ? ` · ${lectures} lecture${lectures === 1 ? '' : 's'}` : ''}{log.finishedSection ? ' · finished ✓' : ''}
+            </span>
           </div>
         </>
       ) : (

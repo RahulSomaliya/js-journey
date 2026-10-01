@@ -1,18 +1,47 @@
-import { addDays, addStudyDays, diffDays, fridayOfWeek, isWeekend, weekdaysBetween } from '@/lib/date';
+import { addDays, addOpenDays, addStudyDays, diffDays, inBreak, isStudyDay, studyDaysBetween, type DayRange } from '@/lib/date';
+import type { CourseId } from '@/lib/course-ids';
 
 export type SectionKind = 'core' | 'bonus' | 'skip';
 export interface Section { id: number; title: string; videoMinutes: number; kind: SectionKind; sortOrder: number; }
+export type LogSource = 'manual' | 'player';
+/** one lecture the Course Player saw her complete (JourneySession.lecturesCompleted) */
+export interface LectureDone { section: number; lecture: number; title: string; }
 export interface LogEntry {
   id: string; studyDate: string; minutes: number; sectionId: number | null;
   finishedSection: boolean; note?: string | null; mood?: string | null; createdAt?: string;
+  /** other sections that became 100% done during this session (player rows only).
+   *  A player session is ONE row keyed on its main section, but she often finishes the
+   *  previous section mid-session — every "is it finished?" read must go through
+   *  sectionsFinishedBy(), never `finishedSection && sectionId` alone. */
+  alsoFinishedIds?: number[] | null;
+  source?: LogSource;
+  lecturesCompleted?: LectureDone[] | null;
+  startedAt?: string | null; endedAt?: string | null;
+}
+/** a row to append to log_entries — manual check-in or Course Player session */
+export interface NewLog {
+  course: CourseId; studyDate: string; sectionId: number | null; minutes: number;
+  note: string | null; mood: string | null; finishedSection: boolean;
+  alsoFinishedIds: number[]; lecturesCompleted: LectureDone[] | null;
+  source: LogSource;
+  /** JourneySession.id for player rows (unique — the dedup key); null for manual rows */
+  externalId: string | null;
+  startedAt: string | null; endedAt: string | null;
 }
 export type PaceLabel = 'ahead' | 'on_track' | 'behind';
+/** Days off the plan (Diwali…), inclusive "YYYY-MM-DD" — the shape the Course Player
+ *  gets as JourneyStatus.planBreak. No study day falls inside one: the target, the
+ *  deadline, weekly goals, section due dates, pace and the daily nudge all skip it. */
+export interface PlanBreak extends DayRange { label: string; }
 export interface ScheduleConfig {
   startDate: string; dailyHours: number; studyDaysPerWeek: number;
   multiplier: number; graceWeeks: number; timeZone: string;
+  /** plan data, not a deadline hack — every study-day count goes through these */
+  breaks: readonly PlanBreak[];
 }
 export interface WeeklyMilestone {
-  week: number; fridayDate: string; cumulativeContentMinutes: number;
+  /** dueDate = the plan's last study day of that week: a Friday, unless a break ends the week early */
+  week: number; dueDate: string; cumulativeContentMinutes: number;
   throughSectionId: number; throughSectionTitle: string;
 }
 export interface PaceResult {
@@ -35,6 +64,26 @@ export function contentMinutesPerWeek(config: ScheduleConfig): number {
 export function totalWeeks(sections: Section[], config: ScheduleConfig): number {
   return Math.ceil(coreContentMinutes(sections) / contentMinutesPerWeek(config));
 }
+// The plan's n-th study day (1-based) counted from the start date — breaks skipped.
+// Week w of the plan ends on study day w × studyDaysPerWeek (a Friday when no break cuts the week).
+function nthStudyDay(config: ScheduleConfig, n: number): string {
+  return addStudyDays(addDays(config.startDate, -1), n, config.breaks);
+}
+// The fixed plan: `weeks` are STUDY weeks. Core-complete target = the last study day of
+// the last week; the deadline adds the grace weeks in study days, so a break pushes both.
+export function planTimeline(sections: Section[], config: ScheduleConfig): { weeks: number; target: string; deadline: string } {
+  const weeks = totalWeeks(sections, config);
+  const target = nthStudyDay(config, weeks * config.studyDaysPerWeek);
+  return {
+    weeks,
+    target,
+    deadline: addStudyDays(target, config.graceWeeks * config.studyDaysPerWeek, config.breaks),
+  };
+}
+/** the Mon–Fri days a break takes out of the plan */
+export function breakStudyDays(b: DayRange): number {
+  return studyDaysBetween(b.start, addDays(b.end, 1), []);
+}
 export function buildMilestones(sections: Section[], config: ScheduleConfig): WeeklyMilestone[] {
   const core = coreSections(sections);
   const total = coreContentMinutes(sections);
@@ -48,13 +97,19 @@ export function buildMilestones(sections: Section[], config: ScheduleConfig): We
     const target = Math.min(perWeek * w, total);
     let through = cum[0];
     for (const c of cum) { if (c.cumEnd <= target + 1e-6) through = c; }
-    out.push({ week: w, fridayDate: fridayOfWeek(config.startDate, w), cumulativeContentMinutes: target, throughSectionId: through.id, throughSectionTitle: through.title });
+    out.push({ week: w, dueDate: nthStudyDay(config, w * config.studyDaysPerWeek), cumulativeContentMinutes: target, throughSectionId: through.id, throughSectionTitle: through.title });
   }
   return out;
 }
+// the sections one log row marks finished: its own section (manual tick / player
+// finished its main section) plus any finished mid-session (player only)
+export function sectionsFinishedBy(l: LogEntry): number[] {
+  const ids = l.finishedSection && l.sectionId != null ? [l.sectionId] : [];
+  return l.alsoFinishedIds?.length ? [...ids, ...l.alsoFinishedIds] : ids;
+}
 export function finishedSectionIds(logs: LogEntry[]): Set<number> {
   const ids = new Set<number>();
-  for (const l of logs) if (l.finishedSection && l.sectionId != null) ids.add(l.sectionId);
+  for (const l of logs) for (const id of sectionsFinishedBy(l)) ids.add(id);
   return ids;
 }
 // a section counts as finished on its EARLIEST finished-row date: with append-only
@@ -63,9 +118,9 @@ export function finishedSectionIds(logs: LogEntry[]): Set<number> {
 function earliestFinishDates(logs: LogEntry[]): Map<number, string> {
   const m = new Map<number, string>();
   for (const l of logs) {
-    if (l.finishedSection && l.sectionId != null) {
-      const prev = m.get(l.sectionId);
-      if (!prev || l.studyDate < prev) m.set(l.sectionId, l.studyDate);
+    for (const id of sectionsFinishedBy(l)) {
+      const prev = m.get(id);
+      if (!prev || l.studyDate < prev) m.set(id, l.studyDate);
     }
   }
   return m;
@@ -74,10 +129,9 @@ export function currentSection(sections: Section[], logs: LogEntry[]): Section |
   const done = finishedSectionIds(logs);
   return coreSections(sections).find((s) => !done.has(s.id)) ?? null;
 }
+// completed STUDY weeks before today (break days don't count)
 export function studyWeeksElapsed(today: string, config: ScheduleConfig): number {
-  const days = diffDays(config.startDate, today);
-  if (days < 0) return 0;
-  return Math.floor(days / 7);
+  return Math.floor(studyDaysBetween(config.startDate, today, config.breaks) / config.studyDaysPerWeek);
 }
 function contentDoneMinutes(sections: Section[], logs: LogEntry[]): number {
   const done = finishedSectionIds(logs);
@@ -88,9 +142,10 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const perWeek = contentMinutesPerWeek(config);
   const total = coreContentMinutes(sections);
   const weeksElapsed = studyWeeksElapsed(today, config);
-  // Prorate the expectation by completed weekdays so "expected by today" grows daily
-  // (instead of jumping only on Fridays) and reads sensibly within a week.
-  const studyDaysElapsed = weekdaysBetween(config.startDate, today);
+  // Prorate the expectation by completed study days so "expected by today" grows daily
+  // (instead of jumping only on Fridays) and reads sensibly within a week. Break days
+  // are not study days, so the expectation stands still over Diwali — no pace lost.
+  const studyDaysElapsed = studyDaysBetween(config.startDate, today, config.breaks);
   const notStarted = diffDays(config.startDate, today) < 0;
   const idealContentMinutes = Math.min(total, Math.round((perWeek / config.studyDaysPerWeek) * studyDaysElapsed));
   const contentMinutesDone = contentDoneMinutes(sections, logs);
@@ -102,9 +157,11 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const daysOffPace = Math.round((gapMinutes / perWeek) * config.studyDaysPerWeek);
   const idealEffortMinutes = Math.round(idealContentMinutes * config.multiplier);
 
-  // projected finish from the TRAILING 14-day content rate; fall back to the plan rate when there's no recent data
+  // projected finish from the TRAILING 14-day content rate; fall back to the plan rate when there's no recent data.
+  // Both the window and the projection count only days OUTSIDE plan breaks: a window
+  // spanning Diwali would otherwise read as a fortnight of zero work after she is back.
   const windowDays = 14;
-  const windowStart = addDays(today, -(windowDays - 1));
+  const windowStart = trailingOpenWindowStart(today, windowDays, config.breaks);
   const minutesById = new Map(coreSections(sections).map((s) => [s.id, s.videoMinutes]));
   // a section is credited to the window only if it was GENUINELY finished inside it —
   // earliest finished row wins, so duplicate finish flags (append-only sessions) can't inflate the rate
@@ -113,7 +170,7 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   for (const [id, d] of finishDates) {
     if (d >= windowStart && d <= today) windowContent += minutesById.get(id) ?? 0; // ISO strings compare lexically
   }
-  // Project in CALENDAR days. Trust the trailing-window rate only once there's enough data
+  // Project in CALENDAR days (minus break days). Trust the trailing-window rate only once there's enough data
   // (>= 2 weeks elapsed AND content cleared recently); otherwise fall back to the plan rate.
   // (Avoids a tiny early sample like "24 min in 14 days" projecting years into the future.)
   const planRatePerDay = perWeek / 7; // content minutes per calendar day at plan pace
@@ -121,8 +178,13 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const ratePerDay = enoughRecentData ? windowContent / windowDays : planRatePerDay;
   const remaining = Math.max(0, total - contentMinutesDone);
   let projectedFinishDate: string | null = null;
-  if (remaining === 0) projectedFinishDate = today;
-  else if (ratePerDay > 0) projectedFinishDate = addDays(today, Math.ceil(remaining / ratePerDay));
+  // finished: the date the last core section was (first) finished — "today" would keep
+  // moving the finish date of a completed course (JS history view)
+  if (remaining === 0) {
+    const dates = [...finishDates].filter(([id]) => minutesById.has(id)).map(([, d]) => d); // core only
+    projectedFinishDate = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : today;
+  }
+  else if (ratePerDay > 0) projectedFinishDate = addOpenDays(today, Math.ceil(remaining / ratePerDay), config.breaks);
 
   return {
     status, contentMinutesDone, contentMinutesTotal: total,
@@ -131,20 +193,32 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
     projectedFinishDate, weeksElapsed, studyDaysElapsed, notStarted,
   };
 }
+// the first day of the trailing window holding `n` non-break days up to and including `today`
+function trailingOpenWindowStart(today: string, n: number, breaks: readonly DayRange[]): string {
+  let d = today;
+  let open = inBreak(d, breaks) ? 0 : 1;
+  while (open < n) {
+    d = addDays(d, -1);
+    if (!inBreak(d, breaks)) open++;
+  }
+  return d;
+}
+// consecutive study days with a log, back from today — weekends AND plan breaks are
+// skipped, so her streak survives Diwali
 export function streak(logs: LogEntry[], today: string, config: ScheduleConfig): number {
-  void config; // weekends are skipped via isWeekend; config kept for signature stability
   const days = new Set(logs.map((l) => l.studyDate));
   let count = 0;
   let cursor = today;
   for (let i = 0; i < 400; i++) {
-    if (isWeekend(cursor)) { cursor = addDays(cursor, -1); continue; }
+    if (!isStudyDay(cursor, config.breaks)) { cursor = addDays(cursor, -1); continue; }
     if (days.has(cursor)) { count++; cursor = addDays(cursor, -1); }
     else break;
   }
   return count;
 }
 
-// --- monthly phases (the spec's "monthly goals") ---
+// --- monthly phases (the spec's "monthly goals") — JS course only; React uses its
+// own "Part N" divider sections instead (lib/courses.ts courseStage) ---
 export interface Phase { n: number; name: string; weekStart: number; weekEnd: number; }
 export const PHASES: Phase[] = [
   { n: 1, name: 'Foundations', weekStart: 1, weekEnd: 3 },
@@ -152,16 +226,61 @@ export const PHASES: Phase[] = [
   { n: 3, name: 'Real apps & data', weekStart: 7, weekEnd: 10 },
   { n: 4, name: 'Modern JS & capstone', weekStart: 11, weekEnd: 14 },
 ];
+// The plan's STUDY week (1-based) that today belongs to; 0 before the start. Weekends and
+// break days belong to the week just studied: all of Diwali reads week 4, and week 5 starts
+// the Monday she is back — so "week N of totalWeeks" never runs past totalWeeks on plan.
 export function currentWeek(today: string, config: ScheduleConfig): number {
-  const days = diffDays(config.startDate, today);
-  if (days < 0) return 0;
-  return Math.floor(days / 7) + 1;
+  if (diffDays(config.startDate, today) < 0) return 0;
+  const studied = studyDaysBetween(config.startDate, addDays(today, 1), config.breaks); // [start, today]
+  return Math.max(1, Math.ceil(studied / config.studyDaysPerWeek));
+}
+
+// The break in progress, else the next one starting within `lookaheadDays`, else null —
+// JourneyStatus.planBreak (the Course Player's chip) and the banner on both views.
+export function planBreakFor(today: string, breaks: readonly PlanBreak[], lookaheadDays = 14): PlanBreak | null {
+  const pick = (b: PlanBreak): PlanBreak => ({ label: b.label, start: b.start, end: b.end });
+  const now = breaks.find((b) => today >= b.start && today <= b.end);
+  if (now) return pick(now);
+  const next = breaks
+    .filter((b) => b.start > today && diffDays(today, b.start) <= lookaheadDays)
+    .reduce<PlanBreak | null>((a, b) => (a === null || b.start < a.start ? b : a), null);
+  return next ? pick(next) : null;
+}
+
+export type NudgeSkip = 'before-start' | 'break' | 'weekend';
+// Why the daily "No log from Mansi today" email stays quiet today (null = send it if
+// she hasn't logged). app/api/cron/daily/route.ts checks this BEFORE touching the DB.
+export function nudgeSkipReason(today: string, config: ScheduleConfig): NudgeSkip | null {
+  if (today < config.startDate) return 'before-start';
+  if (inBreak(today, config.breaks)) return 'break';
+  if (!isStudyDay(today, config.breaks)) return 'weekend';
+  return null;
+}
+
+// Coach pace card "Timeline elapsed": share of the plan's STUDY days (start → deadline)
+// already behind her — it pauses over a break instead of making her look behind.
+export function timelineElapsedPct(today: string, config: ScheduleConfig, deadline: string): number {
+  const span = studyDaysBetween(config.startDate, deadline, config.breaks);
+  if (span <= 0) return 100;
+  const elapsed = studyDaysBetween(config.startDate, today, config.breaks);
+  return Math.min(100, Math.max(0, Math.round((elapsed / span) * 100)));
 }
 export function phaseForWeek(week: number): Phase | null {
   return PHASES.find((p) => week >= p.weekStart && week <= p.weekEnd) ?? null;
 }
 export function sectionEffortMinutes(logs: LogEntry[], sectionId: number): number {
   return logs.filter((l) => l.sectionId === sectionId).reduce((sum, l) => sum + l.minutes, 0);
+}
+// "pace vs the plan multiplier": study minutes logged against FINISHED core sections ÷
+// their video minutes (1.75 = exactly the React plan). null until a section is finished.
+// Approximate by design — a session's minutes all land on its main section.
+export function finishedEffortRatio(sections: Section[], logs: LogEntry[]): number | null {
+  const done = finishedSectionIds(logs);
+  const finished = coreSections(sections).filter((s) => done.has(s.id));
+  const video = finished.reduce((n, s) => n + s.videoMinutes, 0);
+  if (video === 0) return null;
+  const effort = finished.reduce((n, s) => n + sectionEffortMinutes(logs, s.id), 0);
+  return effort / video;
 }
 
 export type SectionStatus = 'done' | 'in_progress' | 'overdue' | 'upcoming';
@@ -180,8 +299,16 @@ export interface DynamicSchedule {
   isCurrentOverdue: boolean;
   projectedFinishDate: string;
   originalTargetDate: string;
+  /** calendar days, projected finish vs original target (> 0 ahead) */
   daysDelta: number;
+  /** the same gap in study days (Mon–Fri, outside breaks) — what both views and the player show */
+  studyDaysDelta: number;
   perSectionDue: Record<number, string>;
+}
+
+// Signed study days (Mon–Fri, outside breaks) a projected finish sits before (+) or after (−) the target.
+export function studyDaysAhead(projected: string, target: string, breaks: readonly DayRange[]): number {
+  return projected <= target ? studyDaysBetween(projected, target, breaks) : -studyDaysBetween(target, projected, breaks);
 }
 
 // Dynamic, progress-anchored schedule: deadlines counted forward (in study-days)
@@ -196,7 +323,7 @@ export function buildDynamicSchedule(
   const core = coreSections(sections);
   const done = finishedSectionIds(logs);
   const perStudyDay = contentMinutesPerWeek(config) / config.studyDaysPerWeek;
-  const originalTargetDate = fridayOfWeek(config.startDate, totalWeeks(sections, config));
+  const originalTargetDate = planTimeline(sections, config).target;
 
   // per-section earliest finish, then the max across sections: duplicate finished
   // rows on later dates (stale tab, resubmit) can't drag the anchor forward
@@ -217,11 +344,14 @@ export function buildDynamicSchedule(
       projectedFinishDate: anchorDate,
       originalTargetDate,
       daysDelta: diffDays(anchorDate, originalTargetDate),
+      studyDaysDelta: studyDaysAhead(anchorDate, originalTargetDate, config.breaks),
       perSectionDue: {},
     };
   }
 
-  const currentDueAtAnchor = addStudyDays(anchorDate, Math.ceil(current.videoMinutes / perStudyDay));
+  // due dates are counted in study days, so they jump over a break: a section due the
+  // week before Diwali is not "overdue" during it, and the projection does not drift
+  const currentDueAtAnchor = addStudyDays(anchorDate, Math.ceil(current.videoMinutes / perStudyDay), config.breaks);
   const isCurrentOverdue = today > currentDueAtAnchor;
   const projAnchor = isCurrentOverdue ? today : anchorDate;
 
@@ -229,7 +359,7 @@ export function buildDynamicSchedule(
   let cum = 0;
   for (const s of remaining) {
     cum += s.videoMinutes;
-    perSectionDue[s.id] = addStudyDays(projAnchor, Math.ceil(cum / perStudyDay));
+    perSectionDue[s.id] = addStudyDays(projAnchor, Math.ceil(cum / perStudyDay), config.breaks);
   }
 
   const projectedFinishDate = perSectionDue[remaining[remaining.length - 1].id];
@@ -241,6 +371,7 @@ export function buildDynamicSchedule(
     projectedFinishDate,
     originalTargetDate,
     daysDelta: diffDays(projectedFinishDate, originalTargetDate),
+    studyDaysDelta: studyDaysAhead(projectedFinishDate, originalTargetDate, config.breaks),
     perSectionDue,
   };
 }

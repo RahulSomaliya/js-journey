@@ -15,3 +15,11 @@ export function roleFromToken(token: string): Role | null {
   if (token && coach && safeEqual(token, coach)) return 'coach';
   return null;
 }
+
+// Course Player → JS Journey (server-to-server): `Authorization: Bearer <STUDENT_TOKEN>`,
+// the same secret as her /m/<token> link. Only the student token may write sessions;
+// roleFromToken fails closed when the env var is unset.
+export function roleFromBearer(header: string | null): Role | null {
+  const m = /^\s*bearer\s+(\S+)\s*$/i.exec(header ?? '');
+  return m ? roleFromToken(m[1]) : null;
+}

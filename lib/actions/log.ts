@@ -2,38 +2,62 @@
 import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { ROLE_COOKIE } from '@/lib/auth';
-import { insertLog, getSections, getLogs } from '@/lib/db/queries';
-import { computePace } from '@/lib/schedule';
-import { PLAN } from '@/lib/config';
+import { insertLog, markUpdatesRead } from '@/lib/db/queries';
+import { ACTIVE_COURSE, getCourse } from '@/lib/courses';
+import { TIME_ZONE } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
-import { sendCoachEmail, logEmailLine, logEmailSubject } from '@/lib/email';
+import { afterLogWritten } from '@/lib/notify';
+import { canSignOff, isPlayerMood, NOTE_MAX, UUID_RE } from '@/lib/player';
+import type { ActionResult } from '@/lib/api';
+import type { NewLog } from '@/lib/schedule';
 
-export async function createLogAction(form: FormData): Promise<{ ok: boolean; error?: string }> {
-  const role = (await cookies()).get(ROLE_COOKIE)?.value;
-  if (role !== 'student') return { ok: false, error: 'unauthorized' };
+// Updates (log rows): her manual sign-off, and Rahul marking updates read.
+// Server actions are reachable by direct POST — every one checks the role cookie.
 
-  const minutes = Number(form.get('minutes'));
+async function role(): Promise<string | undefined> {
+  return (await cookies()).get(ROLE_COOKIE)?.value;
+}
+
+// Manual sign-off — her web page's "I studied away from the player" form: ONE manual update,
+// the same thing a player sign-off is (Rahul reads it, it emails him, it can be stuck).
+// Fields: minutes (0–1440; 0 = a note-only update, which needs a note), note, mood (one of
+// PLAYER_MOODS — both apps show the same four), stuck / finishedSection ('on'), sectionId
+// (optional; must belong to the ACTIVE course — a stale pre-React tab is refused).
+export async function signOffAction(form: FormData): Promise<ActionResult> {
+  if ((await role()) !== 'student') return { ok: false, error: 'unauthorized' };
+
+  const rawMinutes = String(form.get('minutes') ?? '');
+  const minutes = /^\d+$/.test(rawMinutes) ? Number(rawMinutes) : NaN;
+  if (!(minutes >= 0 && minutes <= 1440)) return { ok: false, error: 'Minutes must be a whole number from 0 to 1440.' };
+  const note = String(form.get('note') ?? '').trim() || null;
+  if (note && note.length > NOTE_MAX) return { ok: false, error: `That note is too long (over ${NOTE_MAX} characters).` };
+  if (!canSignOff(minutes, note ?? '')) return { ok: false, error: 'Add a note to send an update without study time.' };
+  const mood = String(form.get('mood') ?? '').replaceAll('️', '') || null; // U+FE0F, like the player API
+  if (mood !== null && !isPlayerMood(mood)) return { ok: false, error: `Unknown mood ${mood}.` };
+  const course = ACTIVE_COURSE;
   const sectionId = form.get('sectionId') ? Number(form.get('sectionId')) : null;
-  const note = (form.get('note') as string | null)?.trim() || null;
-  const mood = (form.get('mood') as string | null) || null;
-  const finishedSection = form.get('finishedSection') === 'on';
-  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) return { ok: false, error: 'invalid minutes' };
-
-  const studyDate = todayInTZ(PLAN.timeZone);
-  await insertLog({ studyDate, sectionId, minutes, note, mood, finishedSection });
-
-  // fire-and-forget email (do not block UX on failure)
-  try {
-    const [sections, logs] = await Promise.all([getSections(), getLogs()]);
-    const pace = computePace({ today: studyDate, sections, logs, config: PLAN });
-    // subject reflects the DAY, not just this session — logs already include the row inserted above
-    const dayTotal = logs.filter((l) => l.studyDate === studyDate).reduce((s, l) => s + l.minutes, 0);
-    await sendCoachEmail(logEmailSubject(minutes, dayTotal), logEmailLine({ minutes, sectionId, finishedSection }, pace, sections));
-  } catch (e) {
-    console.error('email failed', e);
+  if (sectionId != null && !getCourse(course).curriculum.some((s) => s.id === sectionId)) {
+    return { ok: false, error: `section ${sectionId} is not part of ${getCourse(course).shortTitle} — refresh the page` };
   }
 
-  revalidatePath('/m/[token]', 'page');
-  revalidatePath('/r/[token]', 'page');
+  const row: NewLog = {
+    course, studyDate: todayInTZ(TIME_ZONE), sectionId, minutes, note, mood,
+    finishedSection: form.get('finishedSection') === 'on',
+    alsoFinishedIds: [], lecturesCompleted: null, source: 'manual', externalId: null, startedAt: null, endedAt: null,
+    stuck: form.get('stuck') === 'on', autoClosed: false,
+  };
+  await insertLog(row);
+  afterLogWritten(row); // revalidate both views + coach email (after the response)
   return { ok: true };
+}
+
+// "Mark read" without replying — one or more `logId` fields (log row ids: FeedUpdate.logId).
+// Idempotent: `marked` counts only updates that were still unread.
+export async function markUpdatesReadAction(form: FormData): Promise<ActionResult<{ marked: number }>> {
+  if ((await role()) !== 'coach') return { ok: false, error: 'unauthorized' };
+  const ids = form.getAll('logId').map(String);
+  if (ids.length === 0 || !ids.every((id) => UUID_RE.test(id))) return { ok: false, error: 'No update to mark read — refresh the page.' };
+  const marked = await markUpdatesRead(ids);
+  revalidatePath('/r/[token]', 'page');
+  return { ok: true, marked };
 }

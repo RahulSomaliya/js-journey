@@ -1,27 +1,29 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { MoonIcon, SunIcon } from '@/components/ui';
 
+// Light ↔ dark. The inline script in app/layout.tsx sets data-theme before paint (the stored pick,
+// else the OS), so the icon is pure CSS (`dark:` variant) — no state, no hydration flash.
 export function ThemeToggle() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    // Read the theme the no-flash inline script set before paint (client-only); one-time mount sync.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDark(document.documentElement.dataset.theme === 'dark');
-  }, []);
   function toggle() {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem('theme', next); } catch {}
-    setDark(next === 'dark');
+    try {
+      localStorage.setItem('theme', next);
+    } catch (e) {
+      // private mode / blocked storage: the switch still applies to this page view
+      console.warn('[theme] could not remember the choice', e);
+    }
   }
   return (
     <button
+      type="button"
       onClick={toggle}
-      aria-label="Toggle dark mode"
-      aria-pressed={dark}
-      className="fixed top-4 right-4 z-50 grid h-10 w-10 place-items-center rounded-full border border-hair-strong bg-surface text-accent shadow transition hover:-translate-y-px hover:border-accent"
+      aria-label="Switch between light and dark"
+      title="Light / dark"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-ink-muted hover:bg-fill hover:text-ink"
     >
-      {dark ? '☀' : '☾'}
+      <MoonIcon className="size-[18px] dark:hidden" />
+      <SunIcon className="hidden size-[18px] dark:block" />
     </button>
   );
 }

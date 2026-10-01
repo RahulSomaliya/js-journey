@@ -15,6 +15,20 @@
       "when": 1786370852529,
       "tag": "0001_fresh_johnny_blaze",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790834258217,
+      "tag": "0002_open_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790848479099,
+      "tag": "0003_faulty_korg",
+      "breakpoints": true
     }
   ]
 }

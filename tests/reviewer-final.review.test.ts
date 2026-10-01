@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  buildDynamicSchedule, computePace, planTimeline, buildMilestones, streak, type LogEntry,
+  buildDynamicSchedule, computePace, planTimeline, buildMilestones, type LogEntry,
 } from '@/lib/schedule';
 import { computeJourneyStatus } from '@/lib/status';
 import { REACT_CURRICULUM, CURRICULUM } from '@/lib/curriculum';
@@ -20,11 +20,12 @@ const status = (today: string, logs: LogEntry[]) => {
 describe('BEHIND and OVERDUE going into Diwali — the break must not add to it', () => {
   // finished through §12 on Wed 21 Oct, then idle: §13 overdue before the break
   const logs = finishThrough(12, '2026-10-21');
-  it('Fri 30 Oct (overdue, re-anchored to today) reads exactly like every break day', () => {
-    const fri = status('2026-10-30', logs);
-    expect(fri.pace).toBe('behind');
-    for (const d of ['2026-10-31', '2026-11-01', '2026-11-04', '2026-11-09', '2026-11-15']) {
-      expect(status(d, logs)).toEqual(fri);
+  it('Sat 31 Oct (week 4\'s goal, due Fri 30 Oct, missed) reads exactly like every break day', () => {
+    expect(status('2026-10-30', logs).pace).toBe('on-track'); // its goal is due today — not behind yet
+    const sat = status('2026-10-31', logs);
+    expect(sat.pace).toBe('behind');
+    for (const d of ['2026-11-01', '2026-11-04', '2026-11-09', '2026-11-15']) {
+      expect(status(d, logs)).toEqual(sat);
     }
   });
   it('studying on a break day never reads worse than staying idle', () => {
@@ -33,11 +34,6 @@ describe('BEHIND and OVERDUE going into Diwali — the break must not add to it'
       ...logs, { id: 'b1', studyDate: '2026-11-09', minutes: 120, sectionId: 113, finishedSection: true },
     ]);
     expect(studied.daysDelta).toBeGreaterThanOrEqual(idle.daysDelta);
-  });
-  it('a log on a break day does not break or shrink the streak (break days are skipped)', () => {
-    const daily: LogEntry[] = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-11-04']
-      .map((d, i) => ({ id: `s${i}`, studyDate: d, minutes: 60, sectionId: 113, finishedSection: false }));
-    expect(streak(daily, '2026-11-15', REACT_PLAN)).toBe(5);
   });
 });
 

@@ -1,22 +1,19 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { Fraunces, IBM_Plex_Sans } from 'next/font/google';
 import './globals.css';
 
-const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
-const plex = IBM_Plex_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-plex', display: 'swap' });
-
 export const metadata: Metadata = {
-  title: "Mansi's JS Journey",
-  description: 'Daily progress through Jonas Schmedtmann’s JavaScript and React courses.',
+  title: 'JS Journey',
+  description: 'Mansi’s study journey and Rahul’s coaching notes.',
 };
 
-// Set the theme before first paint to avoid a flash of the wrong theme.
+// Set the theme before first paint (no flash): the viewer's pick, else the OS. globals.css also
+// follows the OS without this script; the `dark:` variant (theme toggle icon) needs the attribute.
 const themeInit = `(function(){try{var t=localStorage.getItem('theme');if(t!=='dark'&&t!=='light'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=t;}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${plex.variable}`} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
       </head>

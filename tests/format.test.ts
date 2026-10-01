@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fmtDur, fmtDateRange, sectionTag, sessionSummary } from '@/lib/format';
+import { fmtDur, fmtSeconds, fmtShortDate, fmtTime, fmtWhen, plural, sectionTag } from '@/lib/format';
 
 describe('fmtDur', () => {
   it('formats durations as Xh Ym', () => {
@@ -12,13 +12,6 @@ describe('fmtDur', () => {
   });
 });
 
-describe('fmtDateRange', () => {
-  it('prints an inclusive day range, e.g. a plan break', () => {
-    expect(fmtDateRange('2026-11-01', '2026-11-15')).toBe('Sun 1 Nov – Sun 15 Nov');
-    expect(fmtDateRange('2026-11-02', '2026-11-02')).toBe('Mon 2 Nov');
-  });
-});
-
 describe('sectionTag', () => {
   it('formats a course section number as §NN', () => {
     expect(sectionTag(7)).toBe('§07');
@@ -26,18 +19,42 @@ describe('sectionTag', () => {
   });
 });
 
-describe('sessionSummary', () => {
-  it('describes a player session the way Mansi sees it', () => {
-    const lectures = Array.from({ length: 9 }, (_, i) => ({ section: 7, lecture: i + 1, title: `L${i + 1}` }));
-    expect(sessionSummary({ source: 'player', minutes: 102, lecturesCompleted: lectures, mood: '🙂' }, 7))
-      .toBe('From the player · 1h 42m · 9 lectures · §07 · 🙂');
+describe('fmtSeconds (the player\'s formatDuration: whole minutes, rounded down)', () => {
+  it('formats seconds as Xh Ym', () => {
+    expect(fmtSeconds(0)).toBe('0m');
+    expect(fmtSeconds(59)).toBe('0m');
+    expect(fmtSeconds(60)).toBe('1m');
+    expect(fmtSeconds(3600)).toBe('1h');
+    expect(fmtSeconds(6974)).toBe('1h 56m');
+    expect(fmtSeconds(-5)).toBe('0m');
   });
-  it('singular lecture, no mood, no section', () => {
-    expect(sessionSummary({ source: 'player', minutes: 25, lecturesCompleted: [{ section: 3, lecture: 2, title: 'x' }], mood: null }, null))
-      .toBe('From the player · 25m · 1 lecture');
+});
+
+describe('fmtShortDate', () => {
+  it('prints a day without the weekday', () => {
+    expect(fmtShortDate('2026-09-22')).toBe('22 Sep');
   });
-  it('manual check-ins say so and never mention lectures', () => {
-    expect(sessionSummary({ source: 'manual', minutes: 120, lecturesCompleted: null, mood: '🚀' }, 12)).toBe('Check-in · 2h · §12 · 🚀');
-    expect(sessionSummary({ minutes: 60 }, 3)).toBe('Check-in · 1h · §03');
+});
+
+describe('fmtTime / fmtWhen — always Asia/Kolkata, whatever the machine zone', () => {
+  it('prints the IST wall-clock time', () => {
+    expect(fmtTime('2026-10-21T13:25:00.000Z')).toBe('18:55');
+    expect(fmtTime('2026-10-20T19:00:00.000Z')).toBe('00:30');
+  });
+  it('says today / yesterday / the weekday within a week, else the date', () => {
+    const today = '2026-10-21';
+    expect(fmtWhen('2026-10-21T13:25:00.000Z', today)).toBe('Today 18:55');
+    expect(fmtWhen('2026-10-20T19:00:00.000Z', today)).toBe('Today 00:30'); // 00:30 IST on the 21st
+    expect(fmtWhen('2026-10-20T14:10:00.000Z', today)).toBe('Yesterday 19:40');
+    expect(fmtWhen('2026-10-16T14:25:00.000Z', today)).toBe('Fri 19:55');
+    expect(fmtWhen('2026-10-05T14:40:00.000Z', today)).toBe('Mon 5 Oct');
+  });
+});
+
+describe('plural', () => {
+  it('counts a noun', () => {
+    expect(plural(1, 'lecture')).toBe('1 lecture');
+    expect(plural(3, 'lecture')).toBe('3 lectures');
+    expect(plural(2, 'day')).toBe('2 days');
   });
 });

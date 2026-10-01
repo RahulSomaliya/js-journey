@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   coreContentMinutes, contentMinutesPerWeek, totalWeeks, buildMilestones,
-  finishedSectionIds, currentSection, studyWeeksElapsed, computePace, streak,
-  currentWeek, phaseForWeek, sectionEffortMinutes, buildCurriculumRows, buildDynamicSchedule,
-  finishedEffortRatio,
+  finishedSectionIds, currentSection, studyWeeksElapsed, computePace,
+  currentWeek, buildDynamicSchedule,
 } from '@/lib/schedule';
 import type { ScheduleConfig, LogEntry } from '@/lib/schedule';
 import { CURRICULUM } from '@/lib/curriculum';
@@ -65,13 +64,6 @@ describe('schedule engine', () => {
     expect(r.contentMinutesDone).toBe(594);
     expect(r.idealContentMinutes).toBe(600);
     expect(r.status).toBe('on_track');
-  });
-  it('streak counts consecutive study-days back from today, skipping weekends', () => {
-    const logs: LogEntry[] = [
-      { id: '1', studyDate: '2026-06-24', minutes: 150, sectionId: 2, finishedSection: false },
-      { id: '2', studyDate: '2026-06-25', minutes: 150, sectionId: 2, finishedSection: false },
-    ];
-    expect(streak(logs, '2026-06-25', CFG)).toBe(2);
   });
   it('idealEffortMinutes = idealContentMinutes * multiplier', () => {
     const r = computePace({ today: '2026-07-06', sections: CURRICULUM, logs: [], config: CFG });
@@ -140,7 +132,6 @@ describe('schedule engine', () => {
     ];
     const r = computePace({ today: '2026-07-20', sections: CURRICULUM, logs, config: CFG });
     expect(r.effortMinutes).toBe(135);
-    expect(sectionEffortMinutes(logs, 1)).toBe(135);
   });
   it('idealContentMinutes prorates by weekday within week 1', () => {
     const r = computePace({ today: '2026-06-24', sections: CURRICULUM, logs: [], config: CFG });
@@ -159,48 +150,6 @@ describe('schedule engine', () => {
     expect(currentWeek('2026-06-29', CFG)).toBe(2);
     expect(currentWeek('2026-09-25', CFG)).toBe(14);
     expect(currentWeek('2026-10-01', CFG)).toBe(15);
-  });
-  it('phaseForWeek maps weeks to the four phases', () => {
-    expect(phaseForWeek(1)!.name).toBe('Foundations');
-    expect(phaseForWeek(7)!.n).toBe(3);
-    expect(phaseForWeek(14)!.n).toBe(4);
-  });
-  it('sectionEffortMinutes sums minutes for one section', () => {
-    const logs: LogEntry[] = [
-      { id: '1', studyDate: '2026-06-24', minutes: 120, sectionId: 2, finishedSection: false },
-      { id: '2', studyDate: '2026-06-25', minutes: 90, sectionId: 2, finishedSection: false },
-      { id: '3', studyDate: '2026-06-25', minutes: 60, sectionId: 3, finishedSection: false },
-    ];
-    expect(sectionEffortMinutes(logs, 2)).toBe(210);
-  });
-});
-
-describe('buildCurriculumRows', () => {
-  it('marks finished done, current in_progress, rest upcoming', () => {
-    const logs: LogEntry[] = [
-      { id: 'a', studyDate: '2026-06-22', minutes: 24, sectionId: 1, finishedSection: true },
-      { id: 'b', studyDate: '2026-06-23', minutes: 60, sectionId: 2, finishedSection: false },
-    ];
-    const dyn = buildDynamicSchedule(CURRICULUM, logs, CFG, '2026-06-24');
-    const rows = buildCurriculumRows(CURRICULUM, logs, dyn, '2026-06-24');
-    const byId = Object.fromEntries(rows.map((r) => [r.section.id, r]));
-    expect(byId[1].status).toBe('done');
-    expect(byId[1].minutesLogged).toBe(24);
-    expect(byId[2].status).toBe('in_progress');
-    expect(byId[3].status).toBe('upcoming');
-    expect(byId[2].targetDate).toBe(dyn.currentDueDate); // current section's dynamic date
-  });
-  it('gives bonus/skip sections a null targetDate', () => {
-    const dyn = buildDynamicSchedule(CURRICULUM, [], CFG, '2026-06-24');
-    const rows = buildCurriculumRows(CURRICULUM, [], dyn, '2026-06-24');
-    expect(rows.find((r) => r.section.id === 4)!.targetDate).toBeNull(); // bonus
-    expect(rows.find((r) => r.section.id === 6)!.targetDate).toBeNull(); // skip
-  });
-  it('returns one row per section, in sortOrder', () => {
-    const dyn = buildDynamicSchedule(CURRICULUM, [], CFG, '2026-06-24');
-    const rows = buildCurriculumRows(CURRICULUM, [], dyn, '2026-06-24');
-    expect(rows).toHaveLength(CURRICULUM.length);
-    expect(rows.map((r) => r.section.id)).toEqual(CURRICULUM.map((s) => s.id));
   });
 });
 
@@ -274,19 +223,6 @@ describe('sections finished mid-session (player rows carry alsoFinishedIds)', ()
     expect([...finishedSectionIds(rows)]).toEqual([1]);
   });
 });
-
-describe('finishedEffortRatio', () => {
-  it('is effort on finished core sections ÷ their video minutes (null until one is finished)', () => {
-    expect(finishedEffortRatio(CURRICULUM, [])).toBeNull();
-    const logs: LogEntry[] = [
-      { id: 'a', studyDate: '2026-06-22', minutes: 40, sectionId: 1, finishedSection: false },
-      { id: 'b', studyDate: '2026-06-23', minutes: 20, sectionId: 1, finishedSection: true }, // S1: 60 / 24
-      { id: 'c', studyDate: '2026-06-24', minutes: 500, sectionId: 2, finishedSection: false }, // S2 unfinished: ignored
-    ];
-    expect(finishedEffortRatio(CURRICULUM, logs)).toBeCloseTo(2.5);
-  });
-});
-
 
 describe('a finished course', () => {
   it('computePace reports the real finish date (last section finished), not today', () => {

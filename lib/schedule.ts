@@ -27,6 +27,10 @@ export interface NewLog {
   /** JourneySession.id for player rows (unique — the dedup key); null for manual rows */
   externalId: string | null;
   startedAt: string | null; endedAt: string | null;
+  /** she ticked "I'm stuck" on this update — the coach email and view flag it */
+  stuck: boolean;
+  /** the player closed the session without her (never true for manual rows) */
+  autoClosed: boolean;
 }
 export type PaceLabel = 'ahead' | 'on_track' | 'behind';
 /** Days off the plan (Diwali…), inclusive "YYYY-MM-DD" — the shape the Course Player
@@ -179,7 +183,7 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const remaining = Math.max(0, total - contentMinutesDone);
   let projectedFinishDate: string | null = null;
   // finished: the date the last core section was (first) finished — "today" would keep
-  // moving the finish date of a completed course (JS history view)
+  // moving the finish date of a completed course
   if (remaining === 0) {
     const dates = [...finishDates].filter(([id]) => minutesById.has(id)).map(([, d]) => d); // core only
     projectedFinishDate = dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : today;
@@ -203,29 +207,6 @@ function trailingOpenWindowStart(today: string, n: number, breaks: readonly DayR
   }
   return d;
 }
-// consecutive study days with a log, back from today — weekends AND plan breaks are
-// skipped, so her streak survives Diwali
-export function streak(logs: LogEntry[], today: string, config: ScheduleConfig): number {
-  const days = new Set(logs.map((l) => l.studyDate));
-  let count = 0;
-  let cursor = today;
-  for (let i = 0; i < 400; i++) {
-    if (!isStudyDay(cursor, config.breaks)) { cursor = addDays(cursor, -1); continue; }
-    if (days.has(cursor)) { count++; cursor = addDays(cursor, -1); }
-    else break;
-  }
-  return count;
-}
-
-// --- monthly phases (the spec's "monthly goals") — JS course only; React uses its
-// own "Part N" divider sections instead (lib/courses.ts courseStage) ---
-export interface Phase { n: number; name: string; weekStart: number; weekEnd: number; }
-export const PHASES: Phase[] = [
-  { n: 1, name: 'Foundations', weekStart: 1, weekEnd: 3 },
-  { n: 2, name: 'Core JS', weekStart: 4, weekEnd: 6 },
-  { n: 3, name: 'Real apps & data', weekStart: 7, weekEnd: 10 },
-  { n: 4, name: 'Modern JS & capstone', weekStart: 11, weekEnd: 14 },
-];
 // The plan's STUDY week (1-based) that today belongs to; 0 before the start. Weekends and
 // break days belong to the week just studied: all of Diwali reads week 4, and week 5 starts
 // the Monday she is back — so "week N of totalWeeks" never runs past totalWeeks on plan.
@@ -236,7 +217,7 @@ export function currentWeek(today: string, config: ScheduleConfig): number {
 }
 
 // The break in progress, else the next one starting within `lookaheadDays`, else null —
-// JourneyStatus.planBreak (the Course Player's chip) and the banner on both views.
+// JourneyStatus.planBreak: the Course Player's "This week", her /m "This week", the /r header.
 export function planBreakFor(today: string, breaks: readonly PlanBreak[], lookaheadDays = 14): PlanBreak | null {
   const pick = (b: PlanBreak): PlanBreak => ({ label: b.label, start: b.start, end: b.end });
   const now = breaks.find((b) => today >= b.start && today <= b.end);
@@ -257,41 +238,6 @@ export function nudgeSkipReason(today: string, config: ScheduleConfig): NudgeSki
   return null;
 }
 
-// Coach pace card "Timeline elapsed": share of the plan's STUDY days (start → deadline)
-// already behind her — it pauses over a break instead of making her look behind.
-export function timelineElapsedPct(today: string, config: ScheduleConfig, deadline: string): number {
-  const span = studyDaysBetween(config.startDate, deadline, config.breaks);
-  if (span <= 0) return 100;
-  const elapsed = studyDaysBetween(config.startDate, today, config.breaks);
-  return Math.min(100, Math.max(0, Math.round((elapsed / span) * 100)));
-}
-export function phaseForWeek(week: number): Phase | null {
-  return PHASES.find((p) => week >= p.weekStart && week <= p.weekEnd) ?? null;
-}
-export function sectionEffortMinutes(logs: LogEntry[], sectionId: number): number {
-  return logs.filter((l) => l.sectionId === sectionId).reduce((sum, l) => sum + l.minutes, 0);
-}
-// "pace vs the plan multiplier": study minutes logged against FINISHED core sections ÷
-// their video minutes (1.75 = exactly the React plan). null until a section is finished.
-// Approximate by design — a session's minutes all land on its main section.
-export function finishedEffortRatio(sections: Section[], logs: LogEntry[]): number | null {
-  const done = finishedSectionIds(logs);
-  const finished = coreSections(sections).filter((s) => done.has(s.id));
-  const video = finished.reduce((n, s) => n + s.videoMinutes, 0);
-  if (video === 0) return null;
-  const effort = finished.reduce((n, s) => n + sectionEffortMinutes(logs, s.id), 0);
-  return effort / video;
-}
-
-export type SectionStatus = 'done' | 'in_progress' | 'overdue' | 'upcoming';
-
-export interface CurriculumRow {
-  section: Section;
-  status: SectionStatus;
-  minutesLogged: number;
-  targetDate: string | null;
-}
-
 export interface DynamicSchedule {
   anchorDate: string;
   currentSection: Section | null;
@@ -301,19 +247,14 @@ export interface DynamicSchedule {
   originalTargetDate: string;
   /** calendar days, projected finish vs original target (> 0 ahead) */
   daysDelta: number;
-  /** the same gap in study days (Mon–Fri, outside breaks) — what both views and the player show */
-  studyDaysDelta: number;
   perSectionDue: Record<number, string>;
-}
-
-// Signed study days (Mon–Fri, outside breaks) a projected finish sits before (+) or after (−) the target.
-export function studyDaysAhead(projected: string, target: string, breaks: readonly DayRange[]): number {
-  return projected <= target ? studyDaysBetween(projected, target, breaks) : -studyDaysBetween(target, projected, breaks);
 }
 
 // Dynamic, progress-anchored schedule: deadlines counted forward (in study-days)
 // from the date she finished her last section, crediting time banked early — and
 // re-anchored to today (honest "behind") once a section's deadline has passed.
+// NOT the pace pill: its projection swings for a student exactly on plan (+3 on day 1, −5 in the last
+// week) — the pill is lib/status.ts planPace. Pages use only `currentSection` from here.
 export function buildDynamicSchedule(
   sections: Section[],
   logs: LogEntry[],
@@ -344,7 +285,6 @@ export function buildDynamicSchedule(
       projectedFinishDate: anchorDate,
       originalTargetDate,
       daysDelta: diffDays(anchorDate, originalTargetDate),
-      studyDaysDelta: studyDaysAhead(anchorDate, originalTargetDate, config.breaks),
       perSectionDue: {},
     };
   }
@@ -371,34 +311,6 @@ export function buildDynamicSchedule(
     projectedFinishDate,
     originalTargetDate,
     daysDelta: diffDays(projectedFinishDate, originalTargetDate),
-    studyDaysDelta: studyDaysAhead(projectedFinishDate, originalTargetDate, config.breaks),
     perSectionDue,
   };
-}
-
-// Maps every section to a display row: how much has been logged against it, its
-// status, and (for current/upcoming core sections) its dynamic target date from
-// `dyn`. Bonus/skip + already-done sections carry no target.
-export function buildCurriculumRows(
-  sections: Section[],
-  logs: LogEntry[],
-  dyn: DynamicSchedule,
-  today: string,
-): CurriculumRow[] {
-  const done = finishedSectionIds(logs);
-  const currentId = dyn.currentSection?.id ?? null;
-  const ordered = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
-
-  return ordered.map((section) => {
-    const minutesLogged = sectionEffortMinutes(logs, section.id);
-    const targetDate = dyn.perSectionDue[section.id] ?? null;
-
-    let status: SectionStatus;
-    if (done.has(section.id)) status = 'done';
-    else if (section.id === currentId) status = 'in_progress';
-    else if (targetDate && targetDate < today) status = 'overdue';
-    else status = 'upcoming';
-
-    return { section, status, minutesLogged, targetDate };
-  });
 }

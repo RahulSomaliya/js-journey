@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
+import { REACT_SECTION_DUE } from './helpers';
 
 // The route handlers are thin: auth → validate → query. The DB and the
 // after-response side effects (email, revalidation) are mocked here.
@@ -33,6 +34,13 @@ const SESSION = {
   finishedSections: [],
   mood: '🙂',
   note: null,
+  stuck: false,
+  autoClosed: false,
+  progress: null,
+};
+const SNAPSHOT = {
+  course: 'react-2023', takenAt: Date.parse('2026-10-05T06:12:05.000Z'), lecturesDone: 9, lecturesTotal: 410,
+  videoSecondsDone: 5400, videoSecondsTotal: 241_800, sectionsDone: [1, 2], current: null, days: { '2026-10-05': 6120 },
 };
 const post = (body: unknown, auth: string | null = 'Bearer stu-secret') =>
   POST(new Request('http://x/api/player/sessions', {
@@ -50,6 +58,13 @@ beforeEach(() => {
 });
 
 describe('POST /api/player/sessions', () => {
+  // the snapshot's takenAt is checked against the server clock (≤ 24 h ahead): pin it to that morning
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-05T07:00:00.000Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
   it('401 without, or with the wrong, bearer token — the coach token is not a student token', async () => {
     for (const auth of [null, 'Bearer nope', 'Bearer coach-secret', 'stu-secret']) {
       const res = await post(SESSION, auth);
@@ -67,23 +82,64 @@ describe('POST /api/player/sessions', () => {
     expect(m.insertPlayerLog).not.toHaveBeenCalled();
   });
   it('201 stores the mapped row once and schedules the coach email', async () => {
-    m.insertPlayerLog.mockResolvedValue('created');
+    m.insertPlayerLog.mockResolvedValue({ log: 'created', progress: null });
     const res = await post(SESSION);
     expect(res.status).toBe(201);
     expect(res.headers.get('cache-control')).toMatch(/no-store/);
-    expect(await res.json()).toEqual({ status: 'created', id: SESSION.id });
+    expect(await res.json()).toEqual({ status: 'created', id: SESSION.id, progress: null });
     expect(m.insertPlayerLog).toHaveBeenCalledTimes(1);
     expect(m.insertPlayerLog.mock.calls[0][0]).toMatchObject({
-      course: 'react-2023', sectionId: 107, minutes: 102, source: 'player', externalId: SESSION.id,
+      course: 'react-2023', sectionId: 107, minutes: 102, source: 'player', externalId: SESSION.id, stuck: false, autoClosed: false,
     });
+    expect(m.insertPlayerLog.mock.calls[0][1]).toBeNull();
     expect(m.afterLogWritten).toHaveBeenCalledTimes(1);
   });
   it('a retry of the same session id is a 200 no-op (no second row, no second email)', async () => {
-    m.insertPlayerLog.mockResolvedValue('duplicate');
+    m.insertPlayerLog.mockResolvedValue({ log: 'duplicate', progress: null });
     const res = await post(SESSION);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'duplicate', id: SESSION.id });
+    expect(await res.json()).toEqual({ status: 'duplicate', id: SESSION.id, progress: null });
     expect(m.afterLogWritten).not.toHaveBeenCalled();
+  });
+  it('v2: stores stuck / autoClosed and hands the snapshot to the same write (newest wins there)', async () => {
+    m.insertPlayerLog.mockResolvedValue({ log: 'created', progress: 'stored' });
+    const res = await post({ ...SESSION, stuck: true, autoClosed: true, progress: SNAPSHOT });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ status: 'created', id: SESSION.id, progress: 'stored' });
+    expect(m.insertPlayerLog.mock.calls[0][0]).toMatchObject({ stuck: true, autoClosed: true });
+    expect(m.insertPlayerLog.mock.calls[0][1]).toEqual(SNAPSHOT);
+    expect(m.afterLogWritten.mock.calls[0][0]).toMatchObject({ stuck: true });
+  });
+  it('v2: a note-only update (0 minutes + note) is stored; 0 minutes without a note is a 400', async () => {
+    m.insertPlayerLog.mockResolvedValue({ log: 'created', progress: null });
+    expect((await post({ ...SESSION, minutes: 0, note: 'Did the exercises on paper' })).status).toBe(201);
+    expect(m.insertPlayerLog.mock.calls[0][0]).toMatchObject({ minutes: 0, note: 'Did the exercises on paper' });
+    const bad = await post({ ...SESSION, minutes: 0, note: null });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toMatch(/note-only/);
+  });
+  it('v2: an unusable snapshot never costs her the update — stored without it, said so, and logged', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    m.insertPlayerLog.mockResolvedValue({ log: 'created', progress: null });
+    const res = await post({ ...SESSION, progress: { ...SNAPSHOT, days: { yesterday: 1 } } });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toEqual({ status: 'created', id: SESSION.id, progress: 'ignored' });
+    expect(m.insertPlayerLog.mock.calls[0][1]).toBeNull();
+    expect(String(spy.mock.calls[0][0])).toMatch(new RegExp(`${SESSION.id}.*progress ignored: days key "yesterday"`));
+    spy.mockRestore();
+  });
+  it('v2: a snapshot from the future (her Mac clock wrong, or past the JS Date range) is ignored — the session still lands', async () => {
+    // before the fix it reached the upsert: RangeError while building the query → 500 → the outbox
+    // retried her minutes + note forever; a 2100 snapshot would have locked out every later one
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    m.insertPlayerLog.mockResolvedValue({ log: 'created', progress: null });
+    for (const takenAt of [9_000_000_000_000_000, Date.parse('2100-01-01T00:00:00Z')]) {
+      const res = await post({ ...SESSION, progress: { ...SNAPSHOT, takenAt } });
+      expect(res.status).toBe(201);
+      expect(await res.json()).toEqual({ status: 'created', id: SESSION.id, progress: 'ignored' });
+    }
+    expect(m.insertPlayerLog.mock.calls.every((c) => c[1] === null)).toBe(true);
+    spy.mockRestore();
   });
   it('500 (so the player retries) when the database write fails', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -125,14 +181,18 @@ describe('GET /api/player/status', () => {
     expect(m.getLogs).toHaveBeenCalledWith('react-2023');
     expect(await res.json()).toEqual({
       pace: 'on-track',
-      daysDelta: 3,
+      daysDelta: 0,
       week: 1,
       totalWeeks: 10,
       targetDate: '2026-12-25',
       deadline: '2027-01-01',
-      goal: { sectionNumber: 1, title: 'Welcome, Welcome, Welcome!', due: '2026-10-06' },
+      goal: { sectionNumber: 5, title: 'Working With Components, Props, and JSX', due: '2026-10-09' },
       coachNote: { body: 'React next! 💚', createdAt: '2026-09-30T12:00:00.000Z' },
       planBreak: null,
+      sectionDue: REACT_SECTION_DUE,
+      skippedSections: [4],
+      studyWeekdays: [1, 2, 3, 4, 5],
+      planBreaks: [{ label: 'Diwali', start: '2026-11-01', end: '2026-11-15' }],
     });
   });
   it('500 with a JSON error and a contextual log line when a database read fails', async () => {

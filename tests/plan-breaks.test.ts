@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  computePace, buildDynamicSchedule, currentWeek, streak, planBreakFor, nudgeSkipReason, timelineElapsedPct,
-  planTimeline, type LogEntry, type PlanBreak,
+  computePace, buildDynamicSchedule, currentWeek, planBreakFor, nudgeSkipReason,
+  type LogEntry, type PlanBreak,
 } from '@/lib/schedule';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
@@ -53,31 +53,29 @@ describe('pace over a plan break — she is never behind because of Diwali', () 
   });
 });
 
-describe('daysDelta over a plan break', () => {
-  it('Fri 30 Oct: §17 (180 min = 3 study days) is due Wed 18 Nov, projected Tue 22 Dec vs Fri 25 Dec = +3', () => {
+describe('the dynamic projection over a plan break', () => {
+  it('Fri 30 Oct: §17 (180 min = 3 study days) is due Wed 18 Nov, projected Tue 22 Dec vs Fri 25 Dec', () => {
     const dyn = dynOn('2026-10-30');
     expect(dyn.currentSection?.sortOrder).toBe(17);
     expect(dyn.currentDueDate).toBe('2026-11-18');
     expect(dyn.projectedFinishDate).toBe('2026-12-22');
     expect(dyn.originalTargetDate).toBe('2026-12-25');
-    expect(dyn.studyDaysDelta).toBe(3);
   });
-  it('does not drift during the break: nothing is overdue, the delta holds', () => {
+  it('does not drift during the break: nothing is overdue, the projection holds', () => {
     for (const d of ['2026-11-02', '2026-11-09', '2026-11-13', '2026-11-15', '2026-11-16']) {
       const dyn = dynOn(d);
       expect(dyn.isCurrentOverdue).toBe(false);
-      expect(dyn.studyDaysDelta).toBe(3);
       expect(dyn.projectedFinishDate).toBe('2026-12-22');
     }
   });
-  it('without the break the same idle fortnight would be overdue and behind', () => {
+  it('without the break the same idle fortnight would be overdue and projected past the target', () => {
     const dyn = dynOn('2026-11-13', NO_BREAK);
     expect(dyn.isCurrentOverdue).toBe(true);
-    expect(dyn.studyDaysDelta).toBeLessThan(0);
+    expect(dyn.projectedFinishDate > dyn.originalTargetDate).toBe(true);
   });
 });
 
-describe('study weeks, streak and timeline over a plan break', () => {
+describe('study weeks over a plan break', () => {
   it('currentWeek counts STUDY weeks: the break keeps week 4, week 5 starts Mon 16 Nov, week 10 ends Fri 25 Dec', () => {
     expect(currentWeek('2026-10-04', REACT_PLAN)).toBe(0);
     expect(currentWeek('2026-10-05', REACT_PLAN)).toBe(1);
@@ -86,22 +84,6 @@ describe('study weeks, streak and timeline over a plan break', () => {
     expect(currentWeek('2026-11-15', REACT_PLAN)).toBe(4);
     expect(currentWeek('2026-11-16', REACT_PLAN)).toBe(5);
     expect(currentWeek('2026-12-25', REACT_PLAN)).toBe(10);
-  });
-  it('the streak survives the break (break days are skipped like weekends)', () => {
-    const logs: LogEntry[] = ['2026-10-29', '2026-10-30', '2026-11-16'].map((d, i) => (
-      { id: `s${i}`, studyDate: d, minutes: 120, sectionId: 117, finishedSection: false }
-    ));
-    expect(streak(logs, '2026-11-16', REACT_PLAN)).toBe(3);
-    expect(streak(logs, '2026-11-09', REACT_PLAN)).toBe(2); // mid-break: still holding Oct 29–30
-    expect(streak(logs, '2026-11-16', NO_BREAK)).toBe(1);
-  });
-  it('timeline elapsed (coach pace card) counts study days, so it pauses during the break', () => {
-    const { deadline } = planTimeline(REACT_CURRICULUM, REACT_PLAN);
-    const pct = (d: string) => timelineElapsedPct(d, REACT_PLAN, deadline);
-    expect(pct('2026-10-01')).toBe(0);
-    expect(pct('2026-10-31')).toBe(37); // 20 of 54 study days to the deadline
-    expect(pct('2026-11-09')).toBe(37);
-    expect(pct('2027-01-08')).toBe(100);
   });
 });
 

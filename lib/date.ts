@@ -17,10 +17,14 @@ export function diffDays(a: string, b: string): number {
 export function dayOfWeek(iso: string): number {
   return toUTCDate(iso).getUTCDay(); // 0=Sun..6=Sat
 }
-export function isWeekend(iso: string): boolean {
-  const d = dayOfWeek(iso);
-  return d === 0 || d === 6;
+/** ISO weekday: 1 = Mon … 7 = Sun (JourneyStatus.studyWeekdays) */
+export function isoWeekday(iso: string): number {
+  return dayOfWeek(iso) || 7;
 }
+/** The plan's study weekdays (ISO): Mon–Fri. The ONE source for isStudyDay below and for
+ *  JourneyStatus.studyWeekdays, which the player's streak walks — two lists would let her Mac and
+ *  Rahul's page disagree on which days a streak may skip. */
+export const STUDY_WEEKDAYS: readonly number[] = [1, 2, 3, 4, 5];
 /** An inclusive run of calendar days with no study — a plan break (ScheduleConfig.breaks). */
 export interface DayRange { start: string; end: string; }
 export function inBreak(iso: string, breaks: readonly DayRange[]): boolean {
@@ -30,7 +34,7 @@ export function inBreak(iso: string, breaks: readonly DayRange[]): boolean {
 // study-day helper on purpose: a call that forgot it would silently count Diwali as
 // study time and show her "behind" for a break the plan promised her.
 export function isStudyDay(iso: string, breaks: readonly DayRange[]): boolean {
-  return !isWeekend(iso) && !inBreak(iso, breaks);
+  return STUDY_WEEKDAYS.includes(isoWeekday(iso)) && !inBreak(iso, breaks);
 }
 // Count study days in [startIso, endIso) — end exclusive. 0 if end <= start.
 export function studyDaysBetween(startIso: string, endIso: string, breaks: readonly DayRange[]): number {

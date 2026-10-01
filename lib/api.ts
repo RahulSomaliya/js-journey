@@ -4,3 +4,7 @@
 export function apiJson(body: unknown, status: number): Response {
   return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
+
+// What every server action returns (lib/actions/*): the page shows `error` as-is, so it is
+// written for Mansi / Rahul, never a stack trace. Extra fields ride on success only.
+export type ActionResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: string };

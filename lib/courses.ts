@@ -1,5 +1,4 @@
 import type { ScheduleConfig, Section } from '@/lib/schedule';
-import { phaseForWeek } from '@/lib/schedule';
 import { CURRICULUM, REACT_CURRICULUM } from '@/lib/curriculum';
 import { JS_PLAN, REACT_PLAN } from '@/lib/config';
 
@@ -11,8 +10,6 @@ export { COURSE_IDS, type CourseId };
 
 /** the course both views open on, and the one manual check-ins log against */
 export const ACTIVE_COURSE: CourseId = 'react-2023';
-
-export interface CourseStage { n: number; label: 'Phase' | 'Part'; name: string; }
 
 export interface CourseDef {
   id: CourseId;
@@ -58,24 +55,4 @@ export function sectionIdFor(course: CourseId, sectionNumber: number): number | 
 }
 export function sectionNumberOf(course: CourseId, sectionId: number): number | null {
   return COURSES[course].curriculum.find((s) => s.id === sectionId)?.sortOrder ?? null;
-}
-
-// "Part 2 - Intermediate React (2 Projects)" → [2, "Intermediate React"]
-const PART_RE = /^Part (\d+) - (.+?)(?: \(\d+ Projects?\))?$/;
-
-// Where she is in the course, in the course's own vocabulary: JS uses the plan's
-// week-based phases; React uses its "Part N" divider folders (by current section).
-export function courseStage(course: CourseId, week: number, current: Section | null): CourseStage | null {
-  if (course === 'js') {
-    const p = phaseForWeek(week);
-    return p ? { n: p.n, label: 'Phase', name: p.name } : null;
-  }
-  if (!current) return null;
-  const parts = COURSES[course].curriculum
-    .map((s) => ({ s, m: PART_RE.exec(s.title) }))
-    .filter((x): x is { s: Section; m: RegExpExecArray } => x.m !== null);
-  if (parts.length === 0) return null;
-  // sections before the first divider (§01 Welcome) belong to Part 1
-  const hit = [...parts].reverse().find((p) => p.s.sortOrder <= current.sortOrder) ?? parts[0];
-  return { n: Number(hit.m[1]), label: 'Part', name: hit.m[2] };
 }

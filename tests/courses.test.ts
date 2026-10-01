@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ACTIVE_COURSE, COURSE_IDS, getCourse, isCourseId, sectionIdFor, sectionNumberOf, courseStage,
+  ACTIVE_COURSE, COURSE_IDS, getCourse, isCourseId, sectionIdFor, sectionNumberOf,
 } from '@/lib/courses';
 import { JS_PLAN, REACT_PLAN, TIME_ZONE } from '@/lib/config';
 import {
@@ -33,15 +33,6 @@ describe('course registry', () => {
     expect(sectionIdFor('js', 6)).toBe(6);
     expect(sectionNumberOf('react-2023', 107)).toBe(7);
     expect(sectionNumberOf('react-2023', 7)).toBeNull(); // a JS id is not a React section
-  });
-  it('React stages are the course’s own Parts; JS keeps its week phases', () => {
-    const react = (n: number) => REACT_CURRICULUM.find((s) => s.sortOrder === n)!;
-    expect(courseStage('react-2023', 1, react(1))).toEqual({ n: 1, label: 'Part', name: 'React Fundamentals' });
-    expect(courseStage('react-2023', 3, react(12))).toEqual({ n: 2, label: 'Part', name: 'Intermediate React' });
-    expect(courseStage('react-2023', 5, react(15))).toEqual({ n: 3, label: 'Part', name: 'Advanced React + Redux' });
-    expect(courseStage('react-2023', 9, react(31))).toEqual({ n: 4, label: 'Part', name: 'Professional React Development' });
-    expect(courseStage('react-2023', 10, null)).toBeNull();
-    expect(courseStage('js', 7, null)).toEqual({ n: 3, label: 'Phase', name: 'Real apps & data' });
   });
 });
 

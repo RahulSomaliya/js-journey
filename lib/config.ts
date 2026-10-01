@@ -3,8 +3,8 @@ import type { ScheduleConfig } from '@/lib/schedule';
 // Every date in the app is an IST calendar date (Mansi studies in India).
 export const TIME_ZONE = 'Asia/Kolkata';
 
-// JavaScript course — COMPLETED (22 Jun → Sep 2026). Frozen history: changing a
-// value here rewrites the JS dashboards (targets, pace, heatmap) after the fact.
+// JavaScript course — COMPLETED (22 Jun → Sep 2026). Frozen history: changing a value here
+// rewrites the JS course's plan numbers (GET /api/player/status?course=js) after the fact.
 export const JS_PLAN: ScheduleConfig = {
   startDate: '2026-06-22', // Monday (IST). Week 1 = Mon 22 Jun .. Fri 26 Jun.
   dailyHours: 2.5,

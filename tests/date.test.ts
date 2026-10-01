@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, addStudyDays, diffDays, dayOfWeek, isWeekend, todayInTZ, inBreak, isStudyDay, studyDaysBetween, addOpenDays } from '@/lib/date';
+import { addDays, addStudyDays, diffDays, dayOfWeek, isoWeekday, todayInTZ, inBreak, isStudyDay, studyDaysBetween, addOpenDays } from '@/lib/date';
 
 describe('date helpers', () => {
   it('addDays crosses month boundaries', () => {
@@ -14,10 +14,13 @@ describe('date helpers', () => {
     expect(dayOfWeek('2026-06-22')).toBe(1);
     expect(dayOfWeek('2026-06-26')).toBe(5);
   });
-  it('isWeekend true for Sat/Sun', () => {
-    expect(isWeekend('2026-06-27')).toBe(true);  // Sat
-    expect(isWeekend('2026-06-28')).toBe(true);  // Sun
-    expect(isWeekend('2026-06-26')).toBe(false); // Fri
+  it('isoWeekday: Mon = 1 … Sun = 7 (JourneyStatus.studyWeekdays)', () => {
+    expect(['2026-06-22', '2026-06-26', '2026-06-27', '2026-06-28'].map(isoWeekday)).toEqual([1, 5, 6, 7]);
+  });
+  it('isStudyDay: Mon–Fri only (no breaks)', () => {
+    expect(isStudyDay('2026-06-26', [])).toBe(true);  // Fri
+    expect(isStudyDay('2026-06-27', [])).toBe(false); // Sat
+    expect(isStudyDay('2026-06-28', [])).toBe(false); // Sun
   });
   it('todayInTZ returns YYYY-MM-DD for a fixed instant', () => {
     // 2026-06-22T20:00:00Z == 2026-06-23 01:30 IST

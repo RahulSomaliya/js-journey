@@ -1,155 +1,182 @@
-import { getSections, getLogs, latestCoachNote, getCourseSummary } from '@/lib/db/queries';
-import {
-  computePace, streak, coreSections, finishedSectionIds,
-  buildDynamicSchedule, currentWeek, buildCurriculumRows, planTimeline, planBreakFor,
-} from '@/lib/schedule';
-import { ACTIVE_COURSE, COURSE_IDS, getCourse, courseStage } from '@/lib/courses';
-import { TIME_ZONE } from '@/lib/config';
-import { todayInTZ, diffDays } from '@/lib/date';
-import { fmtDate, sectionTag } from '@/lib/format';
+import type { ReactNode } from 'react';
+import { getCourseSummary, getJourneyFeed, loadOverview } from '@/lib/db/queries';
+import { ACTIVE_COURSE, COURSE_IDS, getCourse } from '@/lib/courses';
+import { hasNumbers } from '@/lib/overview';
+import { decodeCursor } from '@/lib/feed';
+import { fmtDate, fmtDur, fmtWhen, plural } from '@/lib/format';
+import { greeting, replyContext, unreadFromRahul, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
+import { coreSections, finishedSectionIds } from '@/lib/schedule';
+import { COLUMN } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { ProgressRing } from '@/components/progress-ring';
-import { StreakBadge } from '@/components/streak-badge';
-import { CoachNoteCard } from '@/components/student/coach-note-card';
-import { StuckButton } from '@/components/student/stuck-button';
-import { JourneyStats } from '@/components/student/journey-stats';
-import { Roadmap } from '@/components/student/roadmap';
-import { StudySessions } from '@/components/student/study-sessions';
-import { ManualCheckIn } from '@/components/student/manual-check-in';
-import { CompletedCourseBadge } from '@/components/student/completed-course-badge';
-import { BreakCard } from '@/components/student/break-card';
-import { Heatmap } from '@/components/coach/heatmap';
-import { Motivations } from '@/components/student/motivations';
+import { StatsRow } from '@/components/stats-row';
+import { ThirtyDays } from '@/components/thirty-days';
+import { NoteItem, Pager, UpdateItem } from '@/components/update-item';
+import { FromRahul } from '@/components/student/from-rahul';
+import { ThisWeek } from '@/components/student/this-week';
+import { SignOffForm } from '@/components/student/sign-off-form';
 
 export const dynamic = 'force-dynamic';
 
-const PACE_COPY: Record<string, string> = {
-  ahead: "You're ahead — gorgeous work. ✨",
-  on_track: 'Right on track. Keep the rhythm. 💚',
-  behind: "A little behind — one good session closes the gap. You've got this.",
-};
-const SUBLINES = [
-  'Small steps, every day — that’s how careers are built.',
-  'Two focused hours beat a distracted ten. Let’s go.',
-  'Future-you is already grateful for today.',
-  'Consistency is the whole secret. Just show up.',
-  'Every section you finish is a door that opens.',
-];
+// Mansi's page — a phone-friendly mirror of her Course Player home (course-player
+// docs/spec-v2-coaching.md §B "Student view"): Rahul's words first (marked read once shown, like the
+// player), then this week / due / pace, her numbers, her updates with his replies, and a manual
+// sign-off for study away from the player. Warm to her. Data: docs/v2-data-layer.md.
 
-function greeting(tz: string): string {
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: tz }).format(new Date()));
-  return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-}
+// The feed page she gets is the player's (30). "From Rahul" = that page's unread replies + the feed's
+// `unreadReplies` (older updates with an unread reply) + unread notes (lib/journey-view.ts
+// unreadFromRahul). Home shows the newest few, his notes among them; "See all" lists the page.
+const FEED_LIMIT = 30;
+const HOME_UPDATES = 5;
 
-// Mansi's view of the ACTIVE course (React). Finished courses (JS) shrink to a badge.
-// Player sessions appear in "Your study sessions" on their own; the manual check-in
-// is a collapsed fallback.
-export default async function StudentPage() {
-  const today = todayInTZ(TIME_ZONE);
-  const course = getCourse(ACTIVE_COURSE);
-  const plan = course.plan;
-  const finishedCourses = COURSE_IDS.map(getCourse).filter((c) => c.status === 'completed');
-  const [sections, logs, note, summaries] = await Promise.all([
-    getSections(course.id), getLogs(course.id), latestCoachNote(),
-    Promise.all(finishedCourses.map((c) => getCourseSummary(c.id))),
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+export default async function StudentPage({ searchParams }: Props) {
+  const sp = await searchParams;
+  // a cursor this app did not make → the first page
+  const cursor = typeof sp.before === 'string' ? decodeCursor(sp.before) : null;
+  const course = ACTIVE_COURSE;
+
+  if (cursor || sp.updates === 'all') {
+    // "See all": every update, a feed page at a time (the player's #/updates)
+    const [overview, feed] = await Promise.all([loadOverview(course), getJourneyFeed(course, cursor, FEED_LIMIT)]);
+    return (
+      <Shell title="Your updates" back signOffHref="?#sign-off">
+        <YourUpdates
+          // his notes ride on the first page only (cursor null); `complete` = no older page to hold the rest
+          items={withNotes(feed.updates, feed.notes, feed.nextCursor === null)}
+          today={overview.today}
+          heading={false}
+          nextHref={feed.nextCursor ? `?before=${feed.nextCursor}` : null}
+          newestHref={cursor ? '?updates=all' : null}
+        />
+      </Shell>
+    );
+  }
+
+  const finished = COURSE_IDS.map(getCourse).filter((c) => c.status === 'completed');
+  const [overview, feed, summaries] = await Promise.all([
+    loadOverview(course),
+    getJourneyFeed(course, null, FEED_LIMIT),
+    Promise.all(finished.map((c) => getCourseSummary(c.id))),
   ]);
-  const pace = computePace({ today, sections, logs, config: plan });
-  const days = streak(logs, today, plan);
-
-  const core = coreSections(sections);
-  const doneIds = finishedSectionIds(logs);
-  const sectionsDone = core.filter((s) => doneIds.has(s.id)).length;
-
-  const timeline = planTimeline(sections, plan);
-  const week = Math.max(1, currentWeek(today, plan)); // clamp so pre-start shows week 1 context
-  const dyn = buildDynamicSchedule(sections, logs, plan, today);
-  const cur = dyn.currentSection;
-  const stage = courseStage(course.id, week, cur);
-  const daysToDeadline = diffDays(today, timeline.deadline);
-  const subline = SUBLINES[Math.abs(diffDays('2026-01-01', today)) % SUBLINES.length];
-  const name = process.env.STUDENT_NAME ?? 'there';
-  const coachName = process.env.COACH_NAME ?? 'your coach';
-  const rows = buildCurriculumRows(sections, logs, dyn, today);
-  // a plan break in progress or within 14 days (Diwali) — the same one the Course Player shows
-  const planBreak = planBreakFor(today, plan.breaks);
-  const onBreak = planBreak !== null && today >= planBreak.start;
+  const { today, stats } = overview;
+  const more = feed.updates.length > HOME_UPDATES || feed.nextCursor !== null;
+  const fromRahul = unreadFromRahul(feed).map(({ message, replyTo }) => ({
+    id: message.id,
+    body: message.body,
+    when: fmtWhen(message.createdAt, today),
+    context: replyTo ? replyContext(replyTo, today) : null,
+  }));
+  // what she can still sign off against: the section she is in and everything after it
+  const done = finishedSectionIds(overview.logs);
+  const sections = coreSections(overview.sections)
+    .filter((s) => !done.has(s.id))
+    .map((s) => ({ id: s.id, number: s.sortOrder, title: s.title }));
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-12 sm:px-8">
-      <div className="mb-6 flex justify-end">
-        <ThemeToggle />
-      </div>
-
-      <header className="reveal">
-        <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p className="text-sm text-faint">{greeting(TIME_ZONE)}, {name} 👋</p>
-          {finishedCourses.map((c, i) => (
-            <CompletedCourseBadge key={c.id} shortTitle={c.shortTitle} title={c.title} summary={summaries[i]} />
-          ))}
-        </div>
-        <h1 className="mt-2 font-serif text-4xl font-semibold leading-tight text-ink">Today&apos;s focus</h1>
-        <p className="mt-1 text-lg text-accent-deep">
-          {cur ? `${sectionTag(cur.sortOrder)} · ${cur.title}` : `${course.shortTitle} complete — you did it! 🎉`}
-        </p>
-        <p className="mt-2 max-w-xl text-muted">{subline}</p>
-      </header>
-
-      {planBreak && (
-        <div className="mt-6">
-          <BreakCard planBreak={planBreak} breaks={plan.breaks} today={today} />
+    <Shell title={`${greeting(new Date())}, Mansi`} signOffHref="#sign-off">
+      {fromRahul.length > 0 && (
+        <div className="mb-12">
+          <FromRahul items={fromRahul} />
         </div>
       )}
 
-      {note && (
-        <div className="mt-6">
-          <CoachNoteCard note={note} coachName={coachName} />
-        </div>
-      )}
+      <ThisWeek w={weekView(overview)} />
 
-      <div className="mt-8 grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
-        {/* left — what she did (automatic), then the manual fallback */}
-        <div className="space-y-6 reveal lg:col-span-7">
-          <StudySessions logs={logs} sections={sections} today={today} startDate={plan.startDate} notStarted={pace.notStarted} />
-          <ManualCheckIn sections={sections} currentSectionId={cur?.id ?? null} finishedIds={[...doneIds]} />
-          <StuckButton sectionId={cur?.id ?? null} />
-        </div>
-
-        {/* right — encouragement + context */}
-        <div className="space-y-6 reveal lg:col-span-5">
-          <div className="flex items-center gap-5 rounded-2xl border border-hair bg-surface p-5 shadow">
-            <ProgressRing pct={pace.contentPct} label={`of ${course.shortTitle}`} />
-            <div className="space-y-2">
-              <StreakBadge days={days} />
-              <p className="text-sm text-muted">
-                {pace.notStarted
-                  ? `Your ${course.shortTitle} journey starts ${fmtDate(plan.startDate)} — feel free to look around!`
-                  : onBreak ? `${planBreak.label} break — your plan is paused, nothing is slipping. 💚` : PACE_COPY[pace.status]}
-              </p>
-            </div>
+      {hasNumbers(overview) ? (
+        <>
+          <div className="mt-12">
+            <StatsRow stats={stats} viewer="student" />
           </div>
-          <JourneyStats
-            sectionsDone={sectionsDone}
-            totalSections={core.length}
-            effortMinutes={pace.effortMinutes}
-            stage={stage}
-            dyn={dyn}
-            daysToDeadline={daysToDeadline}
-            notStarted={pace.notStarted}
-            onBreak={onBreak}
-            plan={{ dailyHours: plan.dailyHours, studyDaysPerWeek: plan.studyDaysPerWeek, target: timeline.target, deadline: timeline.deadline, breaks: plan.breaks }}
-          />
+          <div className="mt-10">
+            <ThirtyDays days={stats.last30.days} averageSeconds={stats.last30.averageSeconds} today={today} emptyText="Your study time will show up here, day by day." />
+          </div>
+        </>
+      ) : (
+        <p className="mt-12 text-sm text-ink-muted">Your numbers start with your first session.</p>
+      )}
+
+      <div className="mt-16">
+        <YourUpdates
+          items={withNotes(feed.updates.slice(0, HOME_UPDATES), feed.notes, !more)}
+          today={today}
+          seeAll={more}
+        />
+      </div>
+
+      <section id="sign-off" aria-labelledby="sign-off-title" className="mt-16 scroll-mt-6">
+        <h2 id="sign-off-title" className="text-base font-semibold text-ink">Studied away from the player?</h2>
+        <p className="mt-1 text-sm text-ink-muted">Sign off here — it reaches Rahul just like a sign-off in the player.</p>
+        <div className="mt-4">
+          <SignOffForm sections={sections} currentSectionId={overview.currentSection?.id ?? null} />
         </div>
-      </div>
+      </section>
 
-      {/* your study streak */}
-      <div className="mt-8">
-        <Heatmap logs={logs} startDate={plan.startDate} planEnd={timeline.deadline} breaks={plan.breaks} today={today} streakDays={days} center={<Motivations />} />
-      </div>
+      {finished.length > 0 && (
+        <footer className="mt-16 space-y-1 border-t border-line pt-6">
+          {finished.map((c, i) => {
+            const s = summaries[i];
+            return (
+              <p key={c.id} className="text-sm text-ink-muted">
+                {c.shortTitle} — finished{s.lastDate ? ` ${fmtDate(s.lastDate)}` : ''} · {fmtDur(s.minutes)} over {plural(s.studyDays, 'day')}. Everything in React stands on it.
+              </p>
+            );
+          })}
+        </footer>
+      )}
+    </Shell>
+  );
+}
 
-      {/* your roadmap */}
-      <div className="mt-8">
-        <Roadmap rows={rows} currentSectionId={cur?.id ?? null} />
-      </div>
+function Shell({ title, back = false, signOffHref, children }: { title: string; back?: boolean; signOffHref: string; children: ReactNode }) {
+  return (
+    <main className={`${COLUMN} pb-24`}>
+      <header className="flex items-start justify-between gap-4 pt-8 pb-10 sm:pt-12">
+        <div className="min-w-0">
+          {back ? (
+            <a href="?" className="rounded-sm text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline">← Back</a>
+          ) : (
+            <p className="text-sm text-ink-muted">React</p>
+          )}
+          <h1 className="mt-1 text-3xl font-semibold text-ink">{title}</h1>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          <a href={signOffHref} className="inline-flex h-8 items-center rounded-full border border-line bg-surface px-3.5 text-sm font-medium text-ink hover:bg-fill">
+            Sign off
+          </a>
+          <ThemeToggle />
+        </div>
+      </header>
+      {children}
     </main>
+  );
+}
+
+function YourUpdates({ items, today, heading = true, seeAll = false, nextHref = null, newestHref = null }: {
+  /** her updates with Rahul's notes among them (withNotes) */
+  items: HistoryItem[];
+  today: string;
+  /** false when the page title already says "Your updates" */
+  heading?: boolean;
+  /** home: link to the full list */
+  seeAll?: boolean;
+  nextHref?: string | null;
+  newestHref?: string | null;
+}) {
+  return (
+    <section aria-labelledby="updates-title">
+      <div className={`flex items-baseline justify-between gap-4 border-b border-line ${heading ? 'pb-4' : ''}`}>
+        <h2 id="updates-title" className={heading ? 'text-base font-semibold text-ink' : 'sr-only'}>Your updates</h2>
+        {seeAll && <a href="?updates=all" className="rounded-sm text-sm font-medium text-accent-ink underline-offset-4 hover:underline">See all</a>}
+      </div>
+      {items.length === 0 ? (
+        <p className="py-6 text-sm text-ink-muted">Every time you sign off — in the player or below — your update shows up here, with Rahul’s replies.</p>
+      ) : (
+        items.map((i) => (i.kind === 'update'
+          ? <UpdateItem key={i.update.id} update={i.update} today={today} viewer="student" />
+          : <NoteItem key={i.note.id} note={i.note} today={today} />))
+      )}
+      <Pager nextHref={nextHref} newestHref={newestHref} />
+    </section>
   );
 }

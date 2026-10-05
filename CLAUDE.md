@@ -97,3 +97,6 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
 - Vercel runtime logs reach back only about an HOUR on this plan (2026-10-05: a query "since Oct 3" returned just the
   last hour), so a lost sign-off from the morning leaves no trace there by afternoon. Debug the player from its own
   `.player/data/outbox-mansi.json` (`lastError`, `rejected`) instead, or query the moment it is reported.
+- Clock times are 12 h ("6:55 pm"), only via `lib/format.ts` `fmtTime`/`fmtWhen` (= the player's `formatTimeOfDay`) —
+  Rahul: never 24 h (2026-10-05). The am/pm is hand-built from Intl's numeric IST hour: Intl's own day-period text
+  differs between Node's ICU and her browser's, which would break hydration in a client component.

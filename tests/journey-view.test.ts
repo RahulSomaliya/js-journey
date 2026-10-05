@@ -118,14 +118,14 @@ describe('caughtUp — the line under "Unread" when nothing is (his cue to bring
   it('silent for 2+ study days (today included): a nudge in ink, with the count and her last day', () => {
     // the `behind` fixture: last update Thu 8 Oct, today Wed 21 Oct — the page used to say "You're all caught up."
     expect(at('2026-10-21', thu8)).toEqual({ nudge: true, text: 'No update for 9 study days — last Thu 8 Oct' });
-    expect(at('2026-10-10', thu8)).toEqual({ nudge: false, text: 'Nothing unread · her last update Thu 20:30' }); // only Fri missed
+    expect(at('2026-10-10', thu8)).toEqual({ nudge: false, text: 'Nothing unread · her last update Thu 8:30 pm' }); // only Fri missed
     expect(at('2026-10-13', thu8).nudge).toBe(true); // Fri + Mon + Tue
   });
   it('break days and weekends are not study days: Diwali never reads as silence', () => {
     expect(at('2026-11-13', { studyDate: '2026-10-30', createdAt: '2026-10-30T15:00:00.000Z' })).toEqual({ nudge: false, text: 'Nothing unread · her last update Fri 30 Oct' });
   });
   it('a recent update reads calm with its time; nothing ever: before the start it says what will land', () => {
-    expect(at('2026-10-21', { studyDate: '2026-10-21', createdAt: '2026-10-21T13:25:00.000Z' })).toEqual({ nudge: false, text: 'Nothing unread · her last update Today 18:55' });
+    expect(at('2026-10-21', { studyDate: '2026-10-21', createdAt: '2026-10-21T13:25:00.000Z' })).toEqual({ nudge: false, text: 'Nothing unread · her last update Today 6:55 pm' });
     expect(at('2026-10-03', null)).toEqual({ nudge: false, text: 'Her updates land here when she signs off.' });
     expect(at('2026-10-07', null)).toEqual({ nudge: true, text: 'No update yet — the plan started Mon 5 Oct' });
   });
@@ -178,8 +178,8 @@ describe('updateFacts / moodLabel', () => {
 describe('updateWhen / greeting (IST)', () => {
   it('an update is dated by its study day; the time shows when it was sent that same day', () => {
     const base = { studyDate: '2026-10-21', createdAt: '2026-10-21T13:25:00.000Z' };
-    expect(updateWhen(base, '2026-10-21')).toBe('Today 18:55');
-    expect(updateWhen({ studyDate: '2026-10-20', createdAt: '2026-10-20T14:10:00.000Z' }, '2026-10-21')).toBe('Yesterday 19:40');
+    expect(updateWhen(base, '2026-10-21')).toBe('Today 6:55 pm');
+    expect(updateWhen({ studyDate: '2026-10-20', createdAt: '2026-10-20T14:10:00.000Z' }, '2026-10-21')).toBe('Yesterday 7:40 pm');
     // an auto-closed session sent the next morning still belongs to the day she studied
     expect(updateWhen({ studyDate: '2026-10-19', createdAt: '2026-10-20T04:00:00.000Z' }, '2026-10-21')).toBe('Mon 19 Oct');
     expect(updateWhen({ studyDate: '2026-10-05', createdAt: '2026-10-05T14:40:00.000Z' }, '2026-10-21')).toBe('Mon 5 Oct');

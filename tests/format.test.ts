@@ -38,15 +38,15 @@ describe('fmtShortDate', () => {
 
 describe('fmtTime / fmtWhen — always Asia/Kolkata, whatever the machine zone', () => {
   it('prints the IST wall-clock time', () => {
-    expect(fmtTime('2026-10-21T13:25:00.000Z')).toBe('18:55');
-    expect(fmtTime('2026-10-20T19:00:00.000Z')).toBe('00:30');
+    expect(fmtTime('2026-10-21T13:25:00.000Z')).toBe('6:55 pm');
+    expect(fmtTime('2026-10-20T19:00:00.000Z')).toBe('12:30 am');
   });
   it('says today / yesterday / the weekday within a week, else the date', () => {
     const today = '2026-10-21';
-    expect(fmtWhen('2026-10-21T13:25:00.000Z', today)).toBe('Today 18:55');
-    expect(fmtWhen('2026-10-20T19:00:00.000Z', today)).toBe('Today 00:30'); // 00:30 IST on the 21st
-    expect(fmtWhen('2026-10-20T14:10:00.000Z', today)).toBe('Yesterday 19:40');
-    expect(fmtWhen('2026-10-16T14:25:00.000Z', today)).toBe('Fri 19:55');
+    expect(fmtWhen('2026-10-21T13:25:00.000Z', today)).toBe('Today 6:55 pm');
+    expect(fmtWhen('2026-10-20T19:00:00.000Z', today)).toBe('Today 12:30 am'); // 12:30 am IST on the 21st
+    expect(fmtWhen('2026-10-20T14:10:00.000Z', today)).toBe('Yesterday 7:40 pm');
+    expect(fmtWhen('2026-10-16T14:25:00.000Z', today)).toBe('Fri 7:55 pm');
     expect(fmtWhen('2026-10-05T14:40:00.000Z', today)).toBe('Mon 5 Oct');
   });
 });

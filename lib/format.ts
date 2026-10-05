@@ -39,15 +39,22 @@ export function fmtShortDate(iso: string): string {
 
 // Clock times are IST on purpose (TIME_ZONE): the server renders these pages in UTC and Rahul may
 // read them anywhere — a machine-local time would print a different hour than she lived.
-const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE });
+// 12 h, always (Rahul, 2026-10-05: never 24 h). Intl only reads the IST hour/minute as NUMBERS (h23); the
+// "am"/"pm" is ours — Intl's day-period text differs between ICU builds (Node "pm" vs a browser "PM"/"p.m."),
+// and a client component printing it would mismatch on hydration. Same shape as the player's formatTimeOfDay.
+const IST_CLOCK = new Intl.DateTimeFormat('en-GB', { hour: 'numeric', minute: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE });
 
-// '2026-10-21T13:25:00.000Z' -> '18:55'
+// '2026-10-21T13:25:00.000Z' -> '6:55 pm' · '2026-10-20T19:00:00.000Z' -> '12:30 am'
 export function fmtTime(iso: string): string {
-  return IST_CLOCK.format(new Date(iso));
+  const parts = IST_CLOCK.formatToParts(new Date(iso));
+  const h = Number(parts.find((p) => p.type === 'hour')?.value);
+  const m = parts.find((p) => p.type === 'minute')?.value;
+  if (!Number.isInteger(h) || m === undefined) throw new Error(`fmtTime: cannot read an IST time from "${iso}"`);
+  return `${h % 12 === 0 ? 12 : h % 12}:${m} ${h < 12 ? 'am' : 'pm'}`;
 }
 
-// When a message or update was sent, relative to `today` (IST): 'Today 18:55', 'Yesterday 19:40',
-// 'Fri 19:55' within the week, else 'Mon 5 Oct' (the player's formatMessageTime, in IST).
+// When a message or update was sent, relative to `today` (IST): 'Today 6:55 pm', 'Yesterday 7:40 pm',
+// 'Fri 7:55 pm' within the week, else 'Mon 5 Oct' (the player's formatMessageTime, in IST).
 export function fmtWhen(iso: string, today: string): string {
   const day = todayInTZ(TIME_ZONE, new Date(iso));
   const ago = diffDays(day, today);

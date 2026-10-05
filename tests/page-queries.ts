@@ -62,8 +62,11 @@ export function pageQueries(state: PageQueryState) {
     listUpdates: async (a: UpdatesQuery) =>
       page(updates(a.course).filter((u) => (a.filter === 'all' ? true : a.filter === 'unread' ? u.coachReadAt === null : u.coachReadAt !== null)), a.cursor, a.limit),
     countUnreadUpdates: async (course: CourseId) => updates(course).filter((u) => u.coachReadAt === null).length,
-    getCoachNotes: async () => fixtureNotes(state.scenario),
+    // the real notesQuery = unread + the `recent` newest of the course's era; the fixtures hold few: all of them
+    getCoachNotes: async (course: CourseId) => fixtureNotes(state.scenario, course),
     getJourneyFeed: async (course: CourseId, cursor: FeedCursor | null, limit: number): Promise<JourneyFeed> => {
+      // the fixture feed is React's (its notes are React-era); no page reads a finished course's feed
+      if (course !== 'react-2023') throw new Error(`page-queries: no fixture feed for ${course}`);
       if (cursor === null) return fixtureFeed(state.scenario, limit);
       const p = page(updates(course), cursor, limit);
       return { ...fixtureFeed(state.scenario, limit), updates: p.updates.map(toStudentUpdate), notes: [], unreadReplies: [], nextCursor: p.nextCursor };

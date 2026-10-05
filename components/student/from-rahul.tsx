@@ -14,7 +14,8 @@ export interface FromRahulMessage {
 // The top of her page: everything Rahul wrote that she has not seen, newest first (the player's
 // "From Rahul" block). Shown = seen: it marks them read once on screen — the action revalidates only
 // /r, so this view keeps its "new" marks while she reads; the next visit no longer shows the block.
-// Nothing unread → no block at all.
+// Nothing unread → no block at all. Never render it on a finished course's history (/m?course=js): that
+// page marks NOTHING read (v3) — this component would mark whatever it shows (tests/pages.test.ts).
 export function FromRahul({ items }: { items: FromRahulMessage[] }) {
   const marked = useRef(new Set<string>());
   useEffect(() => {

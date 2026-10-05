@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ACTIVE_COURSE, COURSE_IDS, getCourse, isCourseId, sectionIdFor, sectionNumberOf,
+  ACTIVE_COURSE, COURSE_IDS, REACT_NOTES_FROM, getCourse, isCourseId, noteCourse, noteWindow, sectionIdFor, sectionNumberOf,
 } from '@/lib/courses';
 import { JS_PLAN, REACT_PLAN, TIME_ZONE } from '@/lib/config';
 import {
@@ -33,6 +33,32 @@ describe('course registry', () => {
     expect(sectionIdFor('js', 6)).toBe(6);
     expect(sectionNumberOf('react-2023', 107)).toBe(7);
     expect(sectionNumberOf('react-2023', 7)).toBeNull(); // a JS id is not a React section
+  });
+});
+
+describe('note eras — Rahul\'s standalone notes carry no course, so they belong to the course of their time', () => {
+  it('React\'s notes start the minute React went live in production: Thu 1 Oct 19:32 IST, not midnight', () => {
+    // merge 1bcaeeb was pushed to main at 19:32:16 IST (react-course at 19:31:49) → Vercel prod; from then on the
+    // coach page and its "Send her a note" opened on React. A later boundary filed his launch-evening notes as JS.
+    expect(REACT_NOTES_FROM).toBe('2026-10-01T19:32:00+05:30');
+    expect(new Date(REACT_NOTES_FROM).toISOString()).toBe('2026-10-01T14:02:00.000Z');
+    // never after the push that put React on prod — any later instant hides notes written on the React pages
+    expect(Date.parse(REACT_NOTES_FROM)).toBeLessThanOrEqual(Date.parse('2026-10-01T19:32:16+05:30'));
+  });
+  it('the eras tile time: JS until the boundary (exclusive), React from it, open-ended', () => {
+    const boundary = new Date(REACT_NOTES_FROM);
+    expect(noteWindow('js')).toEqual({ from: null, until: boundary });
+    expect(noteWindow('react-2023')).toEqual({ from: boundary, until: null });
+  });
+  it('noteCourse puts a note on the right side of the boundary, to the millisecond', () => {
+    expect(noteCourse('2026-06-20T10:00:00.000Z')).toBe('js');
+    expect(noteCourse('2026-10-01T12:30:00.000Z')).toBe('js'); // Thu 1 Oct 18:00 IST, the JS pages ("Rest this weekend", fixtures)
+    expect(noteCourse('2026-10-01T14:01:59.999Z')).toBe('js'); // 19:31:59.999 IST
+    expect(noteCourse('2026-10-01T14:02:00.000Z')).toBe('react-2023');
+    // launch evening, from the live React coach page ("React starts Monday", fixtures) — once filed as JS
+    expect(noteCourse('2026-10-01T16:00:00.000Z')).toBe('react-2023'); // 21:30 IST
+    expect(noteCourse('2026-10-01T18:29:59.999Z')).toBe('react-2023'); // 23:59:59.999 IST — the old boundary's last JS ms
+    expect(noteCourse('2026-10-20T16:30:00.000Z')).toBe('react-2023');
   });
 });
 

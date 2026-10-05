@@ -99,7 +99,7 @@ describe('assemblePage', () => {
 describe('assembleFeed (GET /api/player/feed, her /m page)', () => {
   // 3 updates on a page of 2 (+1 "more" row); LOG(1) is outside the page and Rahul replied to it from
   // his history. Before the fix "From Rahul" was built from the page only: the reply was never shown
-  // or marked read, while unreadForStudent (a count over ALL coach messages) kept saying 1.
+  // or marked read, while unreadForStudent (a SQL count of every unread reply, not just the page's) kept saying 1.
   const rows = [LOG(3), LOG(2), LOG(1)];
   const oldReply = MSG(7, LOG(1).id);
   const first = { notes: [MSG(8, null)], unreadReplyRows: [LOG(2), LOG(1)], unreadReplyReplies: [MSG(6, LOG(2).id), oldReply, MSG(5, LOG(1).id, { studentReadAt: new Date() })] };

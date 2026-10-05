@@ -138,6 +138,7 @@ export type FeedQuery =
 export function parseFeedQuery(params: URLSearchParams): FeedQuery {
   const course = params.get('course');
   if (!course) return { ok: false, status: 400, error: 'course query parameter is required, e.g. ?course=react-2023' };
+  // 404 + "unknown course" is matched by the course player (see app/api/player/status/route.ts) — keep both.
   if (!isCourseId(course)) return { ok: false, status: 404, error: `unknown course "${course}"` };
   const rawLimit = params.get('limit') || String(FEED_LIMIT_DEFAULT);
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;

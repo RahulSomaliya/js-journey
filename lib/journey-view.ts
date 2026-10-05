@@ -1,7 +1,7 @@
 import { TIME_ZONE } from '@/lib/config';
 import { addDays, diffDays, studyDaysBetween, todayInTZ } from '@/lib/date';
 import { fmtDate, fmtDur, fmtWhen, plural, sectionTag } from '@/lib/format';
-import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type StudentUpdate } from '@/lib/player';
+import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type PlanRow, type StudentUpdate } from '@/lib/player';
 import { buildMilestones, coreSections, finishedSectionIds, type ScheduleConfig, type Section } from '@/lib/schedule';
 import type { Overview } from '@/lib/overview';
 
@@ -57,18 +57,14 @@ export function weekView(o: Pick<Overview, 'status' | 'today' | 'config'>): Week
   };
 }
 
-export type PlanRow =
-  | {
-      kind: 'week'; week: number; due: string; goal: string;
-      /** past = a "keep going" week whose date passed with its section still open (not a miss: the plan
-       *  only expected part of that section by then) */
-      state: 'done' | 'current' | 'behind' | 'upcoming' | 'past';
-    }
-  | { kind: 'break'; label: string; start: string; end: string; now: boolean };
+// The row type is part of the player contract (JourneyStatus.plan) — it lives in lib/player.ts.
+export type { PlanRow };
 
-/** The coach's plan list: every plan week's goal with its status, each break placed where it falls.
- *  "Done" = every counted section up to the goal's is finished (sectionsFinishedBy, via
- *  finishedSectionIds) — the same rule as JourneyStatus.goal, so the two never disagree. */
+/** The coach's plan list AND her plan in the player (GET /api/player/status `plan`): every plan week's
+ *  goal with its status, each break placed where it falls. "Done" = every counted section up to the
+ *  goal's is finished (sectionsFinishedBy, via finishedSectionIds) — the same rule as JourneyStatus.goal,
+ *  so the two never disagree. Changing a row = changing the player contract: course-player
+ *  shared/types.ts PlanRow mirrors lib/player.ts PlanRow. */
 export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'status' | 'today'>): PlanRow[] {
   const { sections, logs, config, status, today } = o;
   const done = finishedSectionIds(logs);
@@ -154,23 +150,38 @@ export function unreadFromRahul(feed: JourneyFeed): FromRahulItem[] {
   return items.sort((a, b) => Date.parse(b.message.createdAt) - Date.parse(a.message.createdAt));
 }
 
-export type HistoryItem = { kind: 'update'; update: StudentUpdate } | { kind: 'note'; note: CoachMessage };
+export type HistoryItem<U extends StudentUpdate = StudentUpdate> = { kind: 'update'; update: U } | { kind: 'note'; note: CoachMessage };
 
 /** "Your updates" with Rahul's standalone notes interleaved by time, newest first. Her page marks a note
  *  read as soon as "From Rahul" shows it, and read notes rendered nowhere — one visit (the email link)
  *  and a note was gone from both her apps. `complete` = these updates reach her oldest one (no older
  *  page): then the notes older than all of them belong at the end too; otherwise only notes newer than
  *  the oldest update shown (an older note sits among older updates). Notes come on the feed's first
- *  page only, so a note older than that page's oldest update is not listed (≤ 10 recent notes). */
-export function withNotes(updates: StudentUpdate[], notes: CoachMessage[], complete: boolean): HistoryItem[] {
-  const oldest = updates.length ? updates[updates.length - 1].createdAt : null;
-  const shown = notes.filter((n) => complete || (oldest !== null && n.createdAt >= oldest));
-  const items: HistoryItem[] = [
-    ...updates.map((update): HistoryItem => ({ kind: 'update', update })),
-    ...shown.map((note): HistoryItem => ({ kind: 'note', note })),
+ *  page only, so a note older than that page's oldest update is not listed (≤ 10 recent notes).
+ *  `before` (an older page: its cursor's createdAt = the previous page's oldest update) keeps the notes
+ *  of NEWER pages off this one — the JS history passes every note of the era to every page; without it a
+ *  note showed on its own page and again on every older one. */
+export function withNotes<U extends StudentUpdate>(updates: U[], notes: CoachMessage[], complete: boolean, before: string | null = null): HistoryItem<U>[] {
+  const oldest = updates.length ? Date.parse(updates[updates.length - 1].createdAt) : null;
+  // Date.parse, not string order: a cursor carries Postgres's microseconds ("…00.000000Z" sorts before "…00.000Z")
+  const until = before === null ? null : Date.parse(before);
+  const shown = notes.filter((n) => {
+    const t = Date.parse(n.createdAt);
+    return (complete || (oldest !== null && t >= oldest)) && (until === null || t < until);
+  });
+  const items: HistoryItem<U>[] = [
+    ...updates.map((update): HistoryItem<U> => ({ kind: 'update', update })),
+    ...shown.map((note): HistoryItem<U> => ({ kind: 'note', note })),
   ];
-  const at = (i: HistoryItem) => Date.parse(i.kind === 'update' ? i.update.createdAt : i.note.createdAt);
+  const at = (i: HistoryItem<U>) => Date.parse(i.kind === 'update' ? i.update.createdAt : i.note.createdAt);
   return items.sort((a, b) => at(b) - at(a));
+}
+
+/** A finished course's record, under its history page's title (both pages, ?course=js):
+ *  "Finished · Mon 22 Jun → Sat 26 Sep · 163h 5m over 68 study days · 74 updates". */
+export function courseHistoryLine(s: { minutes: number; sessions: number; studyDays: number; firstDate: string | null; lastDate: string | null }): string {
+  const span = s.firstDate && s.lastDate ? ` · ${fmtDate(s.firstDate)} → ${fmtDate(s.lastDate)}` : '';
+  return `Finished${span} · ${fmtDur(s.minutes)} over ${plural(s.studyDays, 'study day')} · ${plural(s.sessions, 'update')}`;
 }
 
 const SNIPPET_MAX = 60;

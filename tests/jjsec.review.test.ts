@@ -88,7 +88,7 @@ describe('F2 "From Rahul" drops replies on updates outside the first feed page',
       id: '11111111-0000-4000-8000-000000000001', body: 'Late answer to your question',
       createdAt: new Date(), studentReadAt: null, logEntryId: old.id,
     };
-    // unreadForStudent is a SQL count over ALL coach messages, so it says 1 — and since the fix the
+    // unreadForStudent is a SQL count over every unread reply of the course, so it says 1 — and since the fix the
     // first page also carries the updates with an unread reply (getJourneyFeed → assembleFeed)
     const feed = assembleFeed({ rows, replies: [], unreadForStudent: 1, first: { notes: [], unreadReplyRows: [old], unreadReplyReplies: [reply] } }, limit);
     // so "From Rahul" (built from page 1) can show it and mark it read

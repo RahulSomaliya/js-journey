@@ -52,16 +52,40 @@ describe('her unread replies on older updates (first feed page)', () => {
 });
 
 describe('standalone notes + unread count', () => {
+  const BOUNDARY = '2026-10-01T14:02:00.000Z'; // lib/courses.ts REACT_NOTES_FROM (Thu 1 Oct 19:32 IST, React live in prod)
   it('notes = every unread one + the most recent read ones, never replies', () => {
-    const { sql, params } = q.notesQuery(10).toSQL();
+    const { sql, params } = q.notesQuery('react-2023', 10).toSQL();
     expect(norm(sql)).toMatch(/"messages"."log_entry_id" is null/);
     expect(norm(sql)).toMatch(/\("messages"."student_read_at" is null or "messages"."id" in \(select "id" from "messages" where .* limit \$\d+\)\)/);
     expect(params).toContain(10);
   });
-  it('unread for her = coach messages without student_read_at', () => {
-    const { sql, params } = q.unreadForStudentQuery().toSQL();
-    expect(norm(sql)).toMatch(/where \("messages"."author" = \$1 and "messages"."student_read_at" is null\)/);
-    expect(params).toEqual(['coach']);
+  it('v3: notes are scoped to the course\'s era — React from the boundary on, JS before it (outer list AND the "recent" subquery)', () => {
+    const react = q.notesQuery('react-2023', 10).toSQL();
+    expect(norm(react.sql).match(/"messages"."created_at" >= \$\d+/g)).toHaveLength(2);
+    expect(react.sql).not.toMatch(/"messages"."created_at" < /);
+    expect(react.params.filter((p) => p === BOUNDARY)).toHaveLength(2);
+    const js = q.notesQuery('js', 10).toSQL();
+    expect(norm(js.sql).match(/"messages"."created_at" < \$\d+/g)).toHaveLength(2);
+    expect(js.sql).not.toMatch(/"messages"."created_at" >= /);
+    expect(js.params.filter((p) => p === BOUNDARY)).toHaveLength(2);
+  });
+  it('the "latest note" (JourneyStatus.coachNote) is scoped the same way', () => {
+    const { sql, params } = q.latestCoachNoteQuery('react-2023').toSQL();
+    expect(norm(sql)).toMatch(/"messages"."log_entry_id" is null and "messages"."created_at" >= \$\d+/);
+    expect(params).toContain(BOUNDARY);
+    expect(norm(q.latestCoachNoteQuery('js').toSQL().sql)).toMatch(/"messages"."created_at" < \$\d+/);
+  });
+  it('unread for her = what the course\'s pages can show: replies on THIS course\'s updates + notes of its era', () => {
+    const { sql, params } = q.unreadForStudentQuery('react-2023').toSQL();
+    expect(norm(sql)).toMatch(/where \("messages"."author" = \$1 and "messages"."student_read_at" is null and \(/);
+    // a reply counts only when its update is this course's (the feed only ever shows this course's updates)
+    expect(norm(sql)).toMatch(/"messages"."log_entry_id" in \(select "id" from "log_entries" where "log_entries"."course" = \$\d+\)/);
+    // a note counts only inside the era notesQuery lists — the same condition, so the badge and the list agree
+    expect(norm(sql)).toMatch(/\("messages"."log_entry_id" is null and "messages"."created_at" >= \$\d+\)/);
+    expect(params).toEqual(['coach', 'react-2023', BOUNDARY]);
+    const js = q.unreadForStudentQuery('js').toSQL();
+    expect(norm(js.sql)).toMatch(/\("messages"."log_entry_id" is null and "messages"."created_at" < \$\d+\)/);
+    expect(js.params).toEqual(['coach', 'js', BOUNDARY]);
   });
 });
 

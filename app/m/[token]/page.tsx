@@ -1,16 +1,19 @@
 import type { ReactNode } from 'react';
-import { getCourseSummary, getJourneyFeed, loadOverview } from '@/lib/db/queries';
-import { ACTIVE_COURSE, COURSE_IDS, getCourse } from '@/lib/courses';
+import { getCoachNotes, getCourseSummary, getJourneyFeed, HISTORY_NOTES_MAX, listUpdates, loadOverview } from '@/lib/db/queries';
+import { ACTIVE_COURSE, COURSE_IDS, getCourse, isCourseId, type CourseId } from '@/lib/courses';
+import { TIME_ZONE } from '@/lib/config';
+import { todayInTZ } from '@/lib/date';
 import { hasNumbers } from '@/lib/overview';
-import { decodeCursor } from '@/lib/feed';
+import { decodeCursor, type FeedCursor } from '@/lib/feed';
 import { fmtDate, fmtDur, fmtWhen, plural } from '@/lib/format';
-import { greeting, replyContext, unreadFromRahul, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
+import { courseHistoryLine, greeting, replyContext, unreadFromRahul, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
 import { coreSections, finishedSectionIds } from '@/lib/schedule';
 import { COLUMN } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { StatsRow } from '@/components/stats-row';
 import { ThirtyDays } from '@/components/thirty-days';
 import { NoteItem, Pager, UpdateItem } from '@/components/update-item';
+import { CourseHistoryHeader } from '@/components/course-history-header';
 import { FromRahul } from '@/components/student/from-rahul';
 import { ThisWeek } from '@/components/student/this-week';
 import { SignOffForm } from '@/components/student/sign-off-form';
@@ -21,12 +24,15 @@ export const dynamic = 'force-dynamic';
 // docs/spec-v2-coaching.md §B "Student view"): Rahul's words first (marked read once shown, like the
 // player), then this week / due / pace, her numbers, her updates with his replies, and a manual
 // sign-off for study away from the player. Warm to her. Data: docs/v2-data-layer.md.
+// A finished course (JavaScript) is history behind a quiet bottom link (?course=js), like Rahul's page:
+// its summary, her updates and his notes of that era (v3 — they no longer fill "Your updates" here).
 
 // The feed page she gets is the player's (30). "From Rahul" = that page's unread replies + the feed's
 // `unreadReplies` (older updates with an unread reply) + unread notes (lib/journey-view.ts
 // unreadFromRahul). Home shows the newest few, his notes among them; "See all" lists the page.
 const FEED_LIMIT = 30;
 const HOME_UPDATES = 5;
+const HISTORY_LIMIT = 20;
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
@@ -34,6 +40,7 @@ export default async function StudentPage({ searchParams }: Props) {
   const sp = await searchParams;
   // a cursor this app did not make → the first page
   const cursor = typeof sp.before === 'string' ? decodeCursor(sp.before) : null;
+  if (isCourseId(sp.course) && getCourse(sp.course).status === 'completed') return courseHistory(sp.course, cursor);
   const course = ACTIVE_COURSE;
 
   if (cursor || sp.updates === 'all') {
@@ -113,13 +120,16 @@ export default async function StudentPage({ searchParams }: Props) {
       </section>
 
       {finished.length > 0 && (
-        <footer className="mt-16 space-y-1 border-t border-line pt-6">
+        <footer className="mt-16 space-y-4 border-t border-line pt-6">
           {finished.map((c, i) => {
             const s = summaries[i];
             return (
-              <p key={c.id} className="text-sm text-ink-muted">
-                {c.shortTitle} — finished{s.lastDate ? ` ${fmtDate(s.lastDate)}` : ''} · {fmtDur(s.minutes)} over {plural(s.studyDays, 'day')}. Everything in React stands on it.
-              </p>
+              <div key={c.id}>
+                <p className="text-sm text-ink-muted">
+                  {c.shortTitle} — finished{s.lastDate ? ` ${fmtDate(s.lastDate)}` : ''} · {fmtDur(s.minutes)} over {plural(s.studyDays, 'day')}. Everything in React stands on it.
+                </p>
+                <a href={`?course=${c.id}`} className="mt-1 inline-block rounded-sm text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline">{`${c.shortTitle} course history →`}</a>
+              </div>
             );
           })}
         </footer>
@@ -152,7 +162,7 @@ function Shell({ title, back = false, signOffHref, children }: { title: string; 
   );
 }
 
-function YourUpdates({ items, today, heading = true, seeAll = false, nextHref = null, newestHref = null }: {
+function YourUpdates({ items, today, heading = true, seeAll = false, nextHref = null, newestHref = null, history = false }: {
   /** her updates with Rahul's notes among them (withNotes) */
   items: HistoryItem[];
   today: string;
@@ -162,6 +172,8 @@ function YourUpdates({ items, today, heading = true, seeAll = false, nextHref = 
   seeAll?: boolean;
   nextHref?: string | null;
   newestHref?: string | null;
+  /** a finished course's history: it marks nothing read, so no "New" mark that could never clear */
+  history?: boolean;
 }) {
   return (
     <section aria-labelledby="updates-title">
@@ -170,13 +182,42 @@ function YourUpdates({ items, today, heading = true, seeAll = false, nextHref = 
         {seeAll && <a href="?updates=all" className="rounded-sm text-sm font-medium text-accent-ink underline-offset-4 hover:underline">See all</a>}
       </div>
       {items.length === 0 ? (
-        <p className="py-6 text-sm text-ink-muted">Every time you sign off — in the player or below — your update shows up here, with Rahul’s replies.</p>
+        <p className="py-6 text-sm text-ink-muted">
+          {history ? 'No updates were logged for this course.' : 'Every time you sign off — in the player or below — your update shows up here, with Rahul’s replies.'}
+        </p>
       ) : (
         items.map((i) => (i.kind === 'update'
-          ? <UpdateItem key={i.update.id} update={i.update} today={today} viewer="student" />
-          : <NoteItem key={i.note.id} note={i.note} today={today} />))
+          ? <UpdateItem key={i.update.id} update={i.update} today={today} viewer="student" newMarks={!history} />
+          : <NoteItem key={i.note.id} note={i.note} today={today} newMarks={!history} />))
       )}
       <Pager nextHref={nextHref} newestHref={newestHref} />
     </section>
+  );
+}
+
+// A finished course, kept as history (her side of /r?course=js): what it took, her updates with his
+// replies, and his notes of that era among them by time (withNotes; `before` keeps a newer page's notes
+// off an older one). READ-ONLY: it must never mark anything read — no <FromRahul> here (it marks what it
+// shows on sight), and no "New" marks (newMarks off) that nothing on this page could ever clear. Awaited by
+// the page (renderToString cannot render an async component — tests/pages.test.ts).
+async function courseHistory(course: CourseId, cursor: FeedCursor | null) {
+  const c = getCourse(course);
+  const [summary, updates, notes] = await Promise.all([
+    getCourseSummary(course),
+    listUpdates({ course, filter: 'all', cursor, limit: HISTORY_LIMIT }),
+    getCoachNotes(course, HISTORY_NOTES_MAX),
+  ]);
+  const query = `?course=${course}`;
+  return (
+    <main className={`${COLUMN} pb-24`}>
+      <CourseHistoryHeader back={getCourse(ACTIVE_COURSE).shortTitle} title={c.shortTitle} line={courseHistoryLine(summary)} />
+      <YourUpdates
+        items={withNotes(updates.updates, notes, updates.nextCursor === null, cursor?.createdAt ?? null)}
+        today={todayInTZ(TIME_ZONE)}
+        nextHref={updates.nextCursor ? `${query}&before=${updates.nextCursor}` : null}
+        newestHref={cursor ? query : null}
+        history
+      />
+    </main>
   );
 }

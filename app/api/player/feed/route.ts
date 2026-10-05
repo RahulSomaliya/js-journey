@@ -4,8 +4,9 @@ import { getJourneyFeed } from '@/lib/db/queries';
 import { apiJson } from '@/lib/api';
 
 // GET /api/player/feed?course=react-2023&cursor=&limit=30 → JourneyFeed (lib/player.ts):
-// her updates newest first with Rahul's replies threaded, his standalone notes, and her
-// unread count. Paginated in SQL with the opaque `nextCursor`; `notes` come on the FIRST
+// her updates newest first with Rahul's replies threaded, his standalone notes of the course's
+// era (v3: JS-era notes stay in the JS history — lib/courses.ts noteWindow), and her unread count
+// for the course. Paginated in SQL with the opaque `nextCursor`; `notes` come on the FIRST
 // page only (cursor empty) — later pages carry `notes: []` (lib/db/queries.ts getJourneyFeed).
 // Bearer student token, never cached. Reading does NOT mark anything read: she marks what
 // she has seen with POST /api/player/feed/read.

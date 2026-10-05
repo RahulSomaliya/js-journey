@@ -1,5 +1,6 @@
 import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
+import { ACTIVE_COURSE, noteCourse, type CourseId } from '@/lib/courses';
 import { finishedSectionIds, type LogEntry } from '@/lib/schedule';
 import { buildOverview, type Overview } from '@/lib/overview';
 import { assembleFeed, assemblePage, type FeedUpdate, type MessageRow, type UpdateRow } from '@/lib/feed';
@@ -15,6 +16,8 @@ import type { CoachMessage, JourneyFeed, ProgressSnapshot } from '@/lib/player';
 //   behind  — same day, but she stopped after Thu 8 Oct: behind, streak 0
 //   diwali  — Wed 4 Nov, mid-break, on plan through §16
 //   empty   — Sat 3 Oct, before the plan starts: nothing at all (empty states)
+// Every scenario also has Rahul's notes from the finished JS course (JS_ERA_NOTES) — the JS history is
+// the same whatever React's state; they never reach a React list (v3, lib/courses.ts noteWindow).
 
 export type Scenario = 'typical' | 'behind' | 'diwali' | 'empty';
 
@@ -124,13 +127,23 @@ function repliesFor(s: Scenario, rows: UpdateRow[]): MessageRow[] {
   ];
 }
 
-export function fixtureNotes(s: Scenario): CoachMessage[] {
-  if (s === 'empty') return [];
-  const notes: CoachMessage[] = [
-    { id: uuid('99999999', 1), body: 'React starts Monday. Same rhythm as JS: 2.5 hours, five days, and tell me when something is fuzzy.', createdAt: '2026-10-04T05:00:00.000Z', readAt: '2026-10-04T09:12:00.000Z' },
+// Notes from the JS era (before REACT_NOTES_FROM, Thu 1 Oct 19:32 IST). The last one, Thu 1 Oct 18:00 IST on the
+// JS pages, she never saw: v3 puts it in the JS history (shown, never marked read there) and no React list or count
+// includes it. The same evening's "React starts Monday" (fixtureNotes) came from the live React page: React's.
+const JS_ERA_NOTES: CoachMessage[] = [
+  { id: uuid('88888888', 3), body: 'Rest this weekend. React on Monday — new app, same rhythm.', createdAt: '2026-10-01T12:30:00.000Z', readAt: null },
+  { id: uuid('88888888', 2), body: 'JavaScript: done. 163 hours over 68 days — I am so proud of you 🎉', createdAt: '2026-09-26T16:30:00.000Z', readAt: '2026-09-27T03:10:00.000Z' },
+  { id: uuid('88888888', 1), body: 'Closures took you two evenings and you did not quit. That is the whole skill.', createdAt: '2026-08-12T15:30:00.000Z', readAt: '2026-08-12T16:05:00.000Z' },
+];
+
+/** Rahul's standalone notes of ONE course's era (lib/courses.ts noteCourse — the rule notesQuery applies in
+ *  SQL), newest first. Default: the React course, what every React list shows. */
+export function fixtureNotes(s: Scenario, course: CourseId = ACTIVE_COURSE): CoachMessage[] {
+  const react: CoachMessage[] = s === 'empty' ? [] : [
+    { id: uuid('99999999', 1), body: 'React starts Monday. Same rhythm as JS: 2.5 hours, five days, and tell me when something is fuzzy.', createdAt: '2026-10-01T16:00:00.000Z', readAt: '2026-10-04T09:12:00.000Z' }, // launch evening, 21:30 IST
   ];
-  if (s === 'typical') notes.unshift({ id: uuid('99999999', 2), body: 'Three weeks in and you have not missed a study day. Proud of you. Dinner is on me Friday 🍕', createdAt: '2026-10-20T16:30:00.000Z', readAt: null });
-  return notes;
+  if (s === 'typical') react.unshift({ id: uuid('99999999', 2), body: 'Three weeks in and you have not missed a study day. Proud of you. Dinner is on me Friday 🍕', createdAt: '2026-10-20T16:30:00.000Z', readAt: null });
+  return [...react, ...JS_ERA_NOTES].filter((n) => noteCourse(n.createdAt) === course);
 }
 
 /** The player's latest snapshot for the scenario (null for empty — the stats fall back to sessions). */

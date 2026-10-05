@@ -5,8 +5,10 @@ import { updateFacts, updateWhen } from '@/lib/journey-view';
 import { Mood, StuckPill, Tag } from '@/components/ui';
 
 // One of her updates with Rahul's replies threaded under it — her history (/m), his history and
-// the JS course history (/r). Same layout as the Course Player's screens/updates/UpdateItem.tsx.
-// `viewer` decides the reply labels: she sees "Rahul · New"; he sees "You · Seen / Not seen yet".
+// the JS course history (both pages, ?course=js). Same layout as the Course Player's
+// screens/updates/UpdateItem.tsx. `viewer` decides the reply labels: she sees "Rahul · New"; he sees
+// "You · Seen / Not seen yet". `newMarks={false}` on a finished course's history: that page marks
+// nothing read (v3), so a "New" there could never clear.
 
 export type Viewer = 'coach' | 'student';
 type Update = StudentUpdate & { autoClosed?: boolean };
@@ -28,7 +30,7 @@ export function UpdateMeta({ update, today, viewer, tags = true }: { update: Upd
   );
 }
 
-export function Replies({ replies, today, viewer, className = '' }: { replies: CoachMessage[]; today: string; viewer: Viewer; className?: string }) {
+export function Replies({ replies, today, viewer, newMarks = true, className = '' }: { replies: CoachMessage[]; today: string; viewer: Viewer; newMarks?: boolean; className?: string }) {
   if (replies.length === 0) return null;
   return (
     <ul className={`mt-3 space-y-3 border-l border-line pl-4 sm:ml-1 ${className}`}>
@@ -36,14 +38,18 @@ export function Replies({ replies, today, viewer, className = '' }: { replies: C
         <li key={r.id}>
           <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-ink-muted">
             {viewer === 'coach' ? 'You' : 'Rahul'} · <time dateTime={r.createdAt}>{fmtWhen(r.createdAt, today)}</time>
-            {viewer === 'student' && r.readAt === null && <NewMark />}
-            {viewer === 'coach' && <span className="font-normal text-ink-subtle">· {r.readAt ? 'Seen' : 'Not seen yet'}</span>}
+            {viewer === 'student' && newMarks && r.readAt === null && <NewMark />}
+            {viewer === 'coach' && <SeenMark readAt={r.readAt} />}
           </p>
           <p className="mt-0.5 max-w-[68ch] whitespace-pre-line text-sm text-ink">{r.body}</p>
         </li>
       ))}
     </ul>
   );
+}
+
+function SeenMark({ readAt }: { readAt: string | null }) {
+  return <span className="font-normal text-ink-subtle">· {readAt ? 'Seen' : 'Not seen yet'}</span>;
 }
 
 function NewMark() {
@@ -55,15 +61,17 @@ function NewMark() {
   );
 }
 
-/** One of Rahul's standalone notes in her "Your updates" (lib/journey-view.ts withNotes) — styled like a
- *  reply, so his words read the same wherever they sit; "New" while she has not seen it. */
-export function NoteItem({ note, today }: { note: CoachMessage; today: string }) {
+/** One of Rahul's standalone notes among her updates (lib/journey-view.ts withNotes) — her "Your updates",
+ *  and the JS history on both pages — styled like a reply, so his words read the same wherever they sit.
+ *  Hers: "New" while she has not seen it (not on a history page: `newMarks`); his: "Seen / Not seen yet". */
+export function NoteItem({ note, today, viewer = 'student', newMarks = true }: { note: CoachMessage; today: string; viewer?: Viewer; newMarks?: boolean }) {
   return (
     <article className="border-b border-line py-5 last:border-b-0">
       <div className="border-l border-line pl-4 sm:ml-1">
         <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-ink-muted">
-          Rahul · note · <time dateTime={note.createdAt}>{fmtWhen(note.createdAt, today)}</time>
-          {note.readAt === null && <NewMark />}
+          {viewer === 'coach' ? 'You' : 'Rahul'} · note · <time dateTime={note.createdAt}>{fmtWhen(note.createdAt, today)}</time>
+          {viewer === 'student' && newMarks && note.readAt === null && <NewMark />}
+          {viewer === 'coach' && <SeenMark readAt={note.readAt} />}
         </p>
         <p className="mt-0.5 max-w-[68ch] whitespace-pre-line text-sm text-ink">{note.body}</p>
       </div>
@@ -73,12 +81,12 @@ export function NoteItem({ note, today }: { note: CoachMessage; today: string })
 
 // A grid, so an action (the coach's quiet "Reply", components/coach/history-reply.tsx) can sit at the
 // right of the first line (col 2, row 1) and open its form under the replies (col-span-2).
-export function UpdateItem({ update, today, viewer, tags, children }: { update: Update; today: string; viewer: Viewer; tags?: boolean; children?: ReactNode }) {
+export function UpdateItem({ update, today, viewer, tags, newMarks, children }: { update: Update; today: string; viewer: Viewer; tags?: boolean; newMarks?: boolean; children?: ReactNode }) {
   return (
     <article className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-b border-line py-5 last:border-b-0">
       <UpdateMeta update={update} today={today} viewer={viewer} tags={tags} />
       {update.note && <p className="col-span-2 mt-2 max-w-[68ch] whitespace-pre-line text-base text-ink">{update.note}</p>}
-      <Replies replies={update.replies} today={today} viewer={viewer} className="col-span-2" />
+      <Replies replies={update.replies} today={today} viewer={viewer} newMarks={newMarks} className="col-span-2" />
       {children}
     </article>
   );

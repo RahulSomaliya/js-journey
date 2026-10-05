@@ -7,9 +7,9 @@
 - migration file `pnpm db:generate` (offline) · seed `pnpm db:seed` (idempotent upsert) · dev `pnpm dev`
 
 ## Structure
-- `app/m/[token]` student view · `app/r/[token]` coach view (`?course=js` = history) · `app/api/player/*` Course Player API · `app/api/cron/daily` missed-day email
+- `app/m/[token]` student view · `app/r/[token]` coach view (both: `?course=js` = the JS history) · `app/api/player/*` Course Player API · `app/api/cron/daily` missed-day email
 - `lib/` pure logic (schedule, status, player, feed, stats, overview, journey-view, courses, curriculum, format; `fixtures` = page test data) + `lib/db` (schema, queries; server-only) + `lib/actions` (server actions) + `lib/notify.ts` (after-write side effects)
-- `components/` shared (`ui` primitives + icons, `stats-row`, `thirty-days`, `update-item`, `theme-toggle`, `auto-textarea`) + `components/coach` (unread cards, reply, note, plan) + `components/student` (From Rahul, This week, sign-off) · `drizzle/` migrations · `scripts/seed.ts` · `tests/`
+- `components/` shared (`ui` primitives + icons, `stats-row`, `thirty-days`, `update-item`, `course-history-header`, `theme-toggle`, `auto-textarea`) + `components/coach` (unread cards, reply, note, plan) + `components/student` (From Rahul, This week, sign-off) · `drizzle/` migrations · `scripts/seed.ts` · `tests/`
 
 ## Architecture map
 | Where is… | |
@@ -20,6 +20,9 @@
 | dynamic schedule / finished sections | `lib/schedule.ts` (`buildDynamicSchedule` → `currentSection`, `sectionsFinishedBy`) |
 | plan breaks (Diwali) | `ScheduleConfig.breaks` in `lib/config.ts`; study-day math in `lib/date.ts`; `planBreakFor` / `nudgeSkipReason` in `lib/schedule.ts` |
 | player contract + validation | `lib/player.ts` (mirror of course-player `shared/types.ts`) |
+| her plan in the player (v3 "See full plan") | `GET /api/player/status` `plan` = `planRows` (`lib/journey-view.ts`, the coach page's Plan); type `PlanRow` in `lib/player.ts` |
+| which course a note of Rahul's belongs to | `lib/courses.ts` `notesFrom` / `noteWindow` / `noteCourse` (React from `REACT_NOTES_FROM`); SQL: `noteEra(course)` in `lib/db/queries.ts` |
+| a finished course's history (`?course=js`) | `/m` `courseHistory`, `/r` `jsHistory`: summary + her updates + that era's notes (`withNotes` + `before`), read-only |
 | player status numbers | `lib/status.ts` (`goal` = this plan week's goal, `sectionDue` = plan-week Fridays) |
 | what a new log triggers | `lib/notify.ts` `afterLogWritten` (revalidate + coach email, stuck flagged) |
 | v2 updates feed / read state / replies | `lib/feed.ts` (cursor, page assembly) + `lib/db/queries.ts` (`listUpdates`, `getJourneyFeed`, `markUpdatesRead`, `markCoachMessagesRead`, `replyToUpdate`) |
@@ -41,7 +44,8 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
   sections" would hit log FKs.
 - A player session is ONE row: sections finished mid-session ride in `also_finished_section_ids`. Any "is it
   finished?" read must use `sectionsFinishedBy` — `finishedSection && sectionId` alone misses them.
-- The player outbox drops a session for good on ANY 4xx — only return 4xx for input that can never succeed.
+- The player outbox never retries a 4xx: reads/progress are dropped for good, an update is parked as `rejected` (course-
+  player v3; before v3 it was dropped — her 2026-10-05 sign-off) — only return 4xx for input that can never succeed.
 - Colours are tokens only (`app/globals.css`): text on `bg-accent` is `text-on-accent` (the dark accent is a light orange —
   white text ≈ 2:1). `tests/theme-contrast.test.ts` pins every text pairing at AA in both themes, keeps the two dark blocks
   identical, and fails on any raw colour (hex, `rgb(`/`oklch(`, Tailwind palette class) in `components/` or `app/`.
@@ -74,8 +78,16 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
   shows 5 (`HOME_UPDATES` vs `FEED_LIMIT`); its "Your updates" must list his notes too (`withNotes`) — `/m` marks a
   note read the moment it shows, so a read note rendered nowhere else is lost after one visit.
 - `tests/pages.test.ts` renders the real pages with `renderToString`, which cannot render an async component: a page
-  awaits its data (or a helper like `jsHistory()`), never returns `<AsyncThing />`.
+  awaits its data (or a helper like `jsHistory()` / `courseHistory()`), never returns `<AsyncThing />`.
 - `/r` with nothing unread shows ONE line (`caughtUp`): a nudge + "Send her a note" after 2+ silent study days —
   never an "all caught up" card (it topped his page exactly when she had gone quiet).
 - One sign-off rule, `canSignOff` (`lib/player.ts`): the player API, `signOffAction` and the web form (starts at 0m,
   Send disabled until time or a note — it started at 1h, so one tap sent an hour she never studied).
+- Standalone notes have NO course column: they belong to a course by TIME (`noteWindow`, v3). Every note read — the list
+  (`notesQuery`), the latest (`latestCoachNote`), the count (`unreadForStudentQuery`) — takes the SAME `noteEra(course)`
+  (fixtures: `noteCourse`); a count scoped unlike the list = a badge "1 new" over nothing. `unreadForStudent(course)` =
+  unread replies on THAT course's updates + unread notes of its era. Moving `REACT_NOTES_FROM` moves notes between her
+  page and the JS history: first count notes per day READ-ONLY (dates + counts, never bodies).
+- The JS history pages (`?course=js`, both) mark NOTHING read: never `FromRahul` there (marks on sight) and no "New"
+  marks (`newMarks={false}`) — an unread JS-era note would read "New" forever. A paged history passes the cursor as
+  `withNotes(…, before)`, or every note of the era repeats on every older page.

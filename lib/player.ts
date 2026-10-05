@@ -4,8 +4,9 @@ import type { LectureDone, NewLog } from '@/lib/schedule';
 // ---- API contract with the Course Player -------------------------------------
 // Exact mirror of the "JS Journey" block in ~/Developer/course-player/shared/types.ts
 // (v2, 2026-10-01: one learner; every sign-off is an update the coach reads and replies to).
-// Change BOTH files together: the player's outbox drops a request for good on any 4xx,
-// so a contract drift here loses her data.
+// Change BOTH files together: the player's outbox never retries a 4xx — a read/progress is
+// dropped for good, an update is parked as `rejected` (v3) until someone fixes the cause —
+// so a contract drift here stops her updates reaching Rahul.
 
 /** What the player knows about her progress — the coach view renders these same numbers. */
 export interface ProgressSnapshot {
@@ -121,7 +122,7 @@ export interface StudentUpdate {
 export interface JourneyFeed {
   /** newest first; at most `limit` (default 30) */
   updates: StudentUpdate[];
-  /** standalone coach notes (not replies), newest first */
+  /** standalone coach notes (not replies) of the course's era (JS Journey lib/courses.ts noteWindow), newest first */
   notes: CoachMessage[];
   /** FIRST page only ([] on later pages): older updates — not in `updates` — that carry a coach reply
    *  she has not seen, newest first, replies threaded. "From Rahul" = the unread replies in `updates`
@@ -129,7 +130,7 @@ export interface JourneyFeed {
    *  or marked read while unreadForStudent kept counting it. Optional: a JS Journey deployed before it
    *  (or a feed cached before it) has none. */
   unreadReplies?: StudentUpdate[];
-  /** coach replies + notes she has not seen yet */
+  /** coach replies + notes she has not seen yet — for THIS course: replies on its updates, notes of its era */
   unreadForStudent: number;
   /** opaque cursor for the next page of updates, null at the end */
   nextCursor: string | null;

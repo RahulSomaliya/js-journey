@@ -7,8 +7,9 @@ import { apiJson } from '@/lib/api';
 // POST /api/player/sessions — the Course Player's outbox delivers one JourneySession
 // (lib/player.ts) per call, server-to-server, `Authorization: Bearer <student token>`.
 // Status codes drive the player's outbox (course-player docs/spec.md §2 "Outbox"):
-//   2xx → delivered (201 stored, 200 duplicate retry) · 4xx → dropped for good, message
-//   kept as lastError · 5xx → retried later. So: only return 4xx for input that can
+//   2xx → delivered (201 stored, 200 duplicate retry) · 4xx → not retried: the player keeps
+//   the update as `rejected` with this message and shows her "Didn't reach Rahul" (v3 — before
+//   v3 it was dropped for good) · 5xx → retried later. So: only return 4xx for input that can
 //   never succeed; anything transient (DB down, React sections not seeded yet) is a 5xx.
 // Not behind proxy.ts (its matcher only covers /m and /r) — auth happens here.
 // v2: the row stores stuck / autoClosed, and `progress` is upserted into progress_snapshots

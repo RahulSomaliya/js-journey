@@ -73,7 +73,23 @@ export interface JourneyStatus {
   /** EVERY plan break, inclusive "YYYY-MM-DD" (planBreak is only the current / next one — a streak walking
    *  back through last month's break needs it too) */
   planBreaks: { label: string; start: string; end: string }[];
+  /** v3: her full plan, week by week — exactly the coach page's plan list (lib/journey-view.ts planRows),
+   *  so "See full plan" in the player and Rahul's "Plan" can never disagree. GET /api/player/status always
+   *  sends it; optional because a status cached by the player before v3 (or from an older JS Journey) has
+   *  none — the player hides "See full plan" then. The pages' Overview.status leaves it out (they print
+   *  planRows(overview) directly). */
+  plan?: PlanRow[];
 }
+
+/** One row of the plan: a study week (its goal, due Friday, state) or a break where it falls. */
+export type PlanRow =
+  | {
+      kind: 'week'; week: number; due: string; goal: string;
+      /** past = a "keep going" week whose date passed with its section still open (not a miss: the plan
+       *  only expected part of that section by then) */
+      state: 'done' | 'current' | 'behind' | 'upcoming' | 'past';
+    }
+  | { kind: 'break'; label: string; start: string; end: string; now: boolean };
 
 /** A coach reply to one of her updates, or a standalone coach note. */
 export interface CoachMessage {

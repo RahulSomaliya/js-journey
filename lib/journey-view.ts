@@ -1,7 +1,7 @@
 import { TIME_ZONE } from '@/lib/config';
 import { addDays, diffDays, studyDaysBetween, todayInTZ } from '@/lib/date';
 import { fmtDate, fmtDur, fmtWhen, plural, sectionTag } from '@/lib/format';
-import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type StudentUpdate } from '@/lib/player';
+import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type PlanRow, type StudentUpdate } from '@/lib/player';
 import { buildMilestones, coreSections, finishedSectionIds, type ScheduleConfig, type Section } from '@/lib/schedule';
 import type { Overview } from '@/lib/overview';
 
@@ -57,18 +57,14 @@ export function weekView(o: Pick<Overview, 'status' | 'today' | 'config'>): Week
   };
 }
 
-export type PlanRow =
-  | {
-      kind: 'week'; week: number; due: string; goal: string;
-      /** past = a "keep going" week whose date passed with its section still open (not a miss: the plan
-       *  only expected part of that section by then) */
-      state: 'done' | 'current' | 'behind' | 'upcoming' | 'past';
-    }
-  | { kind: 'break'; label: string; start: string; end: string; now: boolean };
+// The row type is part of the player contract (JourneyStatus.plan) — it lives in lib/player.ts.
+export type { PlanRow };
 
-/** The coach's plan list: every plan week's goal with its status, each break placed where it falls.
- *  "Done" = every counted section up to the goal's is finished (sectionsFinishedBy, via
- *  finishedSectionIds) — the same rule as JourneyStatus.goal, so the two never disagree. */
+/** The coach's plan list AND her plan in the player (GET /api/player/status `plan`): every plan week's
+ *  goal with its status, each break placed where it falls. "Done" = every counted section up to the
+ *  goal's is finished (sectionsFinishedBy, via finishedSectionIds) — the same rule as JourneyStatus.goal,
+ *  so the two never disagree. Changing a row = changing the player contract: course-player
+ *  shared/types.ts PlanRow mirrors lib/player.ts PlanRow. */
 export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'status' | 'today'>): PlanRow[] {
   const { sections, logs, config, status, today } = o;
   const done = finishedSectionIds(logs);

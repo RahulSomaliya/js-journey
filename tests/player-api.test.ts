@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
+import { REACT_PLAN } from '@/lib/config';
+import { computeJourneyStatus } from '@/lib/status';
+import { planRows } from '@/lib/journey-view';
 import { REACT_SECTION_DUE } from './helpers';
 
 // The route handlers are thin: auth → validate → query. The DB and the
@@ -193,7 +196,25 @@ describe('GET /api/player/status', () => {
       skippedSections: [4],
       studyWeekdays: [1, 2, 3, 4, 5],
       planBreaks: [{ label: 'Diwali', start: '2026-11-01', end: '2026-11-15' }],
+      plan: expect.any(Array),
     });
+  });
+  it('v3: carries her plan — exactly the coach page\'s plan rows (planRows), the break in place', async () => {
+    m.getSections.mockResolvedValue(REACT_CURRICULUM);
+    m.getLogs.mockResolvedValue([]);
+    m.latestCoachNote.mockResolvedValue(null);
+    const body = await (await get('?course=react-2023')).json();
+    const today = '2026-10-01';
+    const status = computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null });
+    expect(body.plan).toEqual(planRows({ sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, status, today }));
+    // the contract shape, pinned (course-player shared/types.ts PlanRow mirrors it)
+    expect(body.plan).toHaveLength(11); // 10 study weeks + the Diwali break
+    expect(body.plan[0]).toEqual({ kind: 'week', week: 1, due: '2026-10-09', goal: 'Finish §05 Working With Components, Props, and JSX', state: 'current' });
+    expect(body.plan[1]).toMatchObject({ kind: 'week', week: 2, state: 'upcoming' });
+    expect(body.plan[4]).toEqual({ kind: 'break', label: 'Diwali', start: '2026-11-01', end: '2026-11-15', now: false });
+    // no extra read for it: the plan is built from the rows the status already loaded
+    expect(m.getSections).toHaveBeenCalledTimes(1);
+    expect(m.getLogs).toHaveBeenCalledTimes(1);
   });
   it('500 with a JSON error and a contextual log line when a database read fails', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

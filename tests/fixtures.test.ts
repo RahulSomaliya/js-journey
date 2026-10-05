@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { FIXTURE_NOW, fixtureFeed, fixtureInbox, fixtureOverview, fixtureSnapshot, fixtureUpdates, type Scenario } from '@/lib/fixtures';
+import { FIXTURE_NOW, fixtureFeed, fixtureInbox, fixtureNotes, fixtureOverview, fixtureSnapshot, fixtureUpdates, type Scenario } from '@/lib/fixtures';
+import { noteCourse } from '@/lib/courses';
+import { unreadFromRahul } from '@/lib/journey-view';
 import { decodeCursor } from '@/lib/feed';
 import { parseProgressSnapshot } from '@/lib/player';
 
@@ -42,6 +44,17 @@ describe('lib/fixtures', () => {
     const o = fixtureOverview('empty');
     expect([o.stats.source, o.stats.today.seconds, o.stats.streak, o.stats.complete.label]).toEqual(['sessions', 0, 0, '0%']);
     expect(fixtureFeed('empty')).toEqual({ updates: [], notes: [], unreadReplies: [], unreadForStudent: 0, nextCursor: null });
+  });
+  it('v3: notes split by era — the React feed (the player\'s, and /m\'s) and inbox never carry a JS-era note', () => {
+    for (const s of ALL) {
+      for (const n of [...fixtureFeed(s).notes, ...fixtureInbox(s).notes, ...fixtureNotes(s)]) expect(noteCourse(n.createdAt)).toBe('react-2023');
+      // her count = exactly what From Rahul can show (a never-seen JS note is not in it)
+      expect(fixtureFeed(s).unreadForStudent).toBe(unreadFromRahul(fixtureFeed(s)).length);
+    }
+    const js = fixtureNotes('typical', 'js');
+    expect(js.map((n) => noteCourse(n.createdAt))).toEqual(['js', 'js', 'js']);
+    expect(js.filter((n) => n.readAt === null)).toHaveLength(1); // the one she never saw — the JS history shows it
+    expect(fixtureNotes('empty', 'js')).toEqual(js); // the JS history is the same whatever React's state
   });
   it('a small page limit yields a real cursor (pagination UI can be exercised)', () => {
     const f = fixtureFeed('typical', 5);

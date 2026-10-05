@@ -1,18 +1,19 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { countUnreadUpdates, getCoachNotes, getCourseSummary, listUpdates, loadOverview } from '@/lib/db/queries';
+import { countUnreadUpdates, getCoachNotes, getCourseSummary, HISTORY_NOTES_MAX, listUpdates, loadOverview } from '@/lib/db/queries';
 import { ACTIVE_COURSE, getCourse } from '@/lib/courses';
 import { TIME_ZONE } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
-import { decodeCursor, type FeedCursor } from '@/lib/feed';
-import { fmtDate, fmtDur, fmtWhen, plural } from '@/lib/format';
-import { caughtUp, planRows, weekView } from '@/lib/journey-view';
+import { decodeCursor, type FeedCursor, type FeedUpdate } from '@/lib/feed';
+import { fmtDate, fmtWhen } from '@/lib/format';
+import { caughtUp, courseHistoryLine, planRows, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
 import { hasNumbers, type Overview } from '@/lib/overview';
 import { COLUMN, PacePill } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { StatsRow } from '@/components/stats-row';
 import { ThirtyDays } from '@/components/thirty-days';
-import { Pager, UpdateItem } from '@/components/update-item';
+import { NoteItem, Pager, UpdateItem } from '@/components/update-item';
+import { CourseHistoryHeader } from '@/components/course-history-header';
 import { UnreadUpdates } from '@/components/coach/unread-updates';
 import { NoteComposer } from '@/components/coach/note-composer';
 import { HistoryReply } from '@/components/coach/history-reply';
@@ -23,7 +24,9 @@ export const dynamic = 'force-dynamic';
 // Rahul's view (docs/spec-v2-coaching.md in course-player, §B "Coach view"): her unread updates on
 // top, each with its own reply box → a note to her → the stats she sees → the plan → the history
 // (read updates + his replies, keyset pages via ?before=<cursor>). The finished JS course is history
-// behind a quiet link (?course=js). Data: docs/v2-data-layer.md. Coach actions take FeedUpdate.logId.
+// behind a quiet link (?course=js): her JS updates AND his JS-era notes — his notes list here holds
+// React-era notes only (v3, lib/courses.ts noteWindow). Data: docs/v2-data-layer.md. Coach actions take
+// FeedUpdate.logId.
 
 const UNREAD_LIMIT = 30;
 const HISTORY_LIMIT = 10;
@@ -51,7 +54,7 @@ export default async function CoachPage({ searchParams }: Props) {
     const [overview, history] = await Promise.all([loadOverview(course), listUpdates({ course, filter: 'read', cursor, limit: HISTORY_LIMIT })]);
     return (
       <Shell overview={overview}>
-        <History updates={history.updates} nextCursor={history.nextCursor} today={overview.today} newest />
+        <History items={updatesOnly(history.updates)} nextCursor={history.nextCursor} today={overview.today} newest />
       </Shell>
     );
   }
@@ -108,7 +111,7 @@ export default async function CoachPage({ searchParams }: Props) {
       </div>
 
       <div className="mt-16">
-        <History updates={history.updates} nextCursor={history.nextCursor} today={today} />
+        <History items={updatesOnly(history.updates)} nextCursor={history.nextCursor} today={today} />
       </div>
 
       <footer className="mt-16 border-t border-line pt-6">
@@ -141,8 +144,11 @@ function Shell({ overview, children }: { overview: Overview; children: ReactNode
   );
 }
 
-function History({ updates, nextCursor, today, newest = false, readOnly = false, query = '' }: {
-  updates: Awaited<ReturnType<typeof listUpdates>>['updates'];
+const updatesOnly = (updates: FeedUpdate[]): HistoryItem<FeedUpdate>[] => updates.map((update) => ({ kind: 'update', update }));
+
+function History({ items, nextCursor, today, newest = false, readOnly = false, query = '' }: {
+  /** her updates; on the JS history, his notes among them (withNotes) */
+  items: HistoryItem<FeedUpdate>[];
   nextCursor: string | null;
   today: string;
   /** an older page: link back to the newest */
@@ -157,39 +163,45 @@ function History({ updates, nextCursor, today, newest = false, readOnly = false,
       <div className="border-b border-line pb-4">
         <h2 id="history-title" className="text-base font-semibold text-ink">{readOnly ? 'Her updates' : 'History'}</h2>
       </div>
-      {updates.length === 0 ? (
+      {items.length === 0 ? (
         <p className="py-6 text-sm text-ink-muted">{readOnly ? 'No updates were logged for this course.' : 'Updates you have read land here, with your replies.'}</p>
       ) : (
-        updates.map((u) => (
-          <UpdateItem key={u.logId} update={u} today={today} viewer="coach" tags={!readOnly}>
-            {!readOnly && <HistoryReply logId={u.logId} />}
-          </UpdateItem>
-        ))
+        items.map((i) => (i.kind === 'note'
+          ? <NoteItem key={i.note.id} note={i.note} today={today} viewer="coach" />
+          : (
+            <UpdateItem key={i.update.logId} update={i.update} today={today} viewer="coach" tags={!readOnly}>
+              {!readOnly && <HistoryReply logId={i.update.logId} />}
+            </UpdateItem>
+          )))
       )}
       <Pager nextHref={nextCursor ? `?${query}before=${nextCursor}` : null} newestHref={newest ? `?${query.replace(/&$/, '')}` : null} />
     </section>
   );
 }
 
-// The finished JavaScript course, kept as history: what it took, and every update she sent.
-// Awaited by the page (not rendered as an async component), like the page's own reads.
+// The finished JavaScript course, kept as history: what it took, every update she sent, and his notes of
+// that era among them by time (withNotes — `before` keeps a newer page's notes off an older one). Her
+// side is the same page (/m?course=js). Awaited by the page (not rendered as an async component), like
+// the page's own reads.
 async function jsHistory(cursor: FeedCursor | null) {
   const js = getCourse('js');
-  const [summary, updates] = await Promise.all([getCourseSummary('js'), listUpdates({ course: 'js', filter: 'all', cursor, limit: 20 })]);
+  const [summary, updates, notes] = await Promise.all([
+    getCourseSummary('js'),
+    listUpdates({ course: 'js', filter: 'all', cursor, limit: 20 }),
+    getCoachNotes('js', HISTORY_NOTES_MAX),
+  ]);
   const today = todayInTZ(TIME_ZONE);
   return (
     <main className={`${COLUMN} pb-24`}>
-      <header className="flex items-start justify-between gap-4 pt-8 pb-10 sm:pt-12">
-        <div className="min-w-0">
-          <a href="?" className="rounded-sm text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline">← React</a>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">{js.shortTitle}</h1>
-          <p className="mt-2 text-sm text-ink-muted">
-            Finished{summary.firstDate && summary.lastDate ? ` · ${fmtDate(summary.firstDate)} → ${fmtDate(summary.lastDate)}` : ''} · {fmtDur(summary.minutes)} over {plural(summary.studyDays, 'study day')} · {plural(summary.sessions, 'update')}
-          </p>
-        </div>
-        <ThemeToggle />
-      </header>
-      <History updates={updates.updates} nextCursor={updates.nextCursor} today={today} newest={cursor !== null} readOnly query="course=js&" />
+      <CourseHistoryHeader back={getCourse(ACTIVE_COURSE).shortTitle} title={js.shortTitle} line={courseHistoryLine(summary)} />
+      <History
+        items={withNotes(updates.updates, notes, updates.nextCursor === null, cursor?.createdAt ?? null)}
+        nextCursor={updates.nextCursor}
+        today={today}
+        newest={cursor !== null}
+        readOnly
+        query="course=js&"
+      />
     </main>
   );
 }

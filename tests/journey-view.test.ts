@@ -146,6 +146,18 @@ describe('withNotes — Rahul\'s standalone notes stay findable in "Your updates
     expect(all.filter((i) => i.kind === 'note')).toHaveLength(2);
     expect(withNotes([], feed.notes, true).map((i) => i.kind)).toEqual(['note', 'note']);
   });
+  it('an older page (`before` = the cursor: the previous page\'s oldest update) lists only the notes between — each note on ONE page', () => {
+    // the JS history pages its updates with ?before= and lists every JS note among them
+    const updates = feed.updates; // 14, newest first
+    const page1 = updates.slice(0, 3);
+    const page2 = updates.slice(3);
+    const before = '2026-10-20T15:40:00.000000Z'; // page 1's oldest (Tue 20 Oct 21:10 IST), as a cursor carries it
+    expect(page1.at(-1)?.createdAt).toBe('2026-10-20T15:40:00.000Z');
+    const notesOn = (items: ReturnType<typeof withNotes>) => items.flatMap((i) => (i.kind === 'note' ? [i.note.body.slice(0, 5)] : []));
+    expect(notesOn(withNotes(page1, feed.notes, false))).toEqual(['Three']);
+    expect(notesOn(withNotes(page2, feed.notes, true, before))).toEqual(['React']); // not "Three" again
+    expect(notesOn(withNotes(page2, feed.notes, true, null))).toEqual(['Three', 'React']); // without it: listed twice
+  });
 });
 
 describe('updateFacts / moodLabel', () => {

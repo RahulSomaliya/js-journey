@@ -14,19 +14,23 @@ vi.mock('@/lib/db/queries', async () => {
     loadOverview: () => live().loadOverview(),
     listUpdates: (a: Parameters<ReturnType<typeof pageQueries>['listUpdates']>[0]) => live().listUpdates(a),
     countUnreadUpdates: (c: 'js' | 'react-2023') => live().countUnreadUpdates(c),
-    getCoachNotes: () => live().getCoachNotes(),
+    getCoachNotes: (...a: Parameters<ReturnType<typeof pageQueries>['getCoachNotes']>) => live().getCoachNotes(...a),
     getJourneyFeed: (...a: Parameters<ReturnType<typeof pageQueries>['getJourneyFeed']>) => live().getJourneyFeed(...a),
     getCourseSummary: () => live().getCourseSummary(),
+    HISTORY_NOTES_MAX: 500,
   };
 });
 vi.mock('@/lib/actions/log', () => ({ signOffAction: vi.fn(), markUpdatesReadAction: vi.fn() }));
 vi.mock('@/lib/actions/message', () => ({ replyToUpdateAction: vi.fn(), sendCoachNoteAction: vi.fn(), markCoachMessagesReadAction: vi.fn() }));
 
-import { createElement } from 'react';
+import { createElement, isValidElement, type ReactNode } from 'react';
 import CoachPage, { generateMetadata } from '@/app/r/[token]/page';
 import StudentPage from '@/app/m/[token]/page';
 import { StatsRow } from '@/components/stats-row';
+import { FromRahul } from '@/components/student/from-rahul';
 import { fixtureInbox, fixtureFeed, fixtureOverview } from '@/lib/fixtures';
+import { unreadFromRahul } from '@/lib/journey-view';
+import { markCoachMessagesReadAction } from '@/lib/actions/message';
 
 const coach = async (sp: Record<string, string> = {}) => text(await CoachPage({ params: Promise.resolve({ token: 't' }), searchParams: Promise.resolve(sp) }));
 const student = async (sp: Record<string, string> = {}) => text(await StudentPage({ searchParams: Promise.resolve(sp) }));
@@ -36,7 +40,20 @@ const text = (el: Parameters<typeof renderToString>[0]) =>
 
 beforeEach(() => {
   state.q = { scenario: 'typical', extraUnread: 0 };
+  vi.clearAllMocks();
 });
+
+/** every element of a (not yet rendered) tree whose type is `type` — the page's own JSX, children included */
+function findAll(node: ReactNode, type: unknown): unknown[] {
+  if (Array.isArray(node)) return node.flatMap((n) => findAll(n, type));
+  if (!isValidElement<{ children?: ReactNode }>(node)) return [];
+  return [...(node.type === type ? [node] : []), ...findAll(node.props.children, type)];
+}
+
+// v3 (spec B2): Rahul's notes written before React went live (lib/courses.ts REACT_NOTES_FROM) are the
+// JS course's — fixtures: "Closures took you…" (Aug, read), "JavaScript: done…" (26 Sep, read) and
+// "Rest this weekend…" (Thu 1 Oct 23:30 IST, NEVER SEEN by her).
+const JS_NOTES = ['Closures took you', 'JavaScript: done', 'Rest this weekend'];
 
 describe('/r — the coach view', () => {
   it('unread updates on top with their reply boxes, then the note, her numbers, the plan, the history', async () => {
@@ -83,6 +100,20 @@ describe('/r — the coach view', () => {
     expect(t).toContain('163h 5m over 68 study days');
     expect(t).toContain('Mapty refactor done');
     expect(t).not.toContain('Reply');
+  });
+  it('v3: his notes list holds only React-era notes — the JS ones are in the JS history, among her updates by time', async () => {
+    const t = await coach();
+    expect(t).toContain('Three weeks in and you have not missed a study day');
+    for (const n of JS_NOTES) expect(t).not.toContain(n);
+    const js = await coach({ course: 'js' });
+    const order = ['Rest this weekend', 'JavaScript: done', 'Mapty refactor done', 'Async/await', 'Closures took you'];
+    const at = order.map((x) => js.indexOf(x));
+    expect(at.every((i) => i >= 0), `missing: ${order.filter((_, i) => at[i] < 0)}`).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    // his view of his own notes: "You · note", and whether she saw it — the never-seen one says so
+    expect(js).toMatch(/You · note · [^·]+· Not seen yet Rest this weekend/);
+    expect(js).toMatch(/You · note · [^·]+· Seen JavaScript: done/);
+    expect(js).not.toContain('Three weeks in');
   });
 });
 
@@ -194,5 +225,50 @@ describe('/m — her view', () => {
     const t = await student({ before: next ?? '' });
     expect(t).toContain('← Newest');
     expect(t).not.toContain('From Rahul');
+  });
+});
+
+describe('v3: the JS course\'s notes live behind "JavaScript course history" on /m', () => {
+  it('her page and her full list hold only React-era notes; "N new" = exactly what From Rahul shows', async () => {
+    for (const scenario of ['typical', 'behind'] as const) {
+      state.q = { scenario, extraUnread: 0 };
+      for (const t of [await student(), await student({ updates: 'all' })]) {
+        for (const n of JS_NOTES) expect(t).not.toContain(n);
+      }
+    }
+    state.q = { scenario: 'typical', extraUnread: 0 };
+    const feed = fixtureFeed('typical');
+    // the never-seen JS note is not in her React count: the badge and the block agree
+    expect(feed.unreadForStudent).toBe(unreadFromRahul(feed).length);
+    expect(await student()).toContain(`${unreadFromRahul(feed).length} new`);
+  });
+  it('a quiet link at the bottom: "JavaScript course history →" (?course=js)', async () => {
+    const html = renderToString(await StudentPage({ searchParams: Promise.resolve({}) }));
+    expect(html).toMatch(/<a href="\?course=js"[^>]*>JavaScript course history →<\/a>/);
+    const t = text(await StudentPage({ searchParams: Promise.resolve({}) }));
+    expect(t.indexOf('JavaScript course history')).toBeGreaterThan(t.indexOf('Studied away from the player?'));
+  });
+  it('?course=js: the JS summary, her JS updates, his JS notes among them by time — read-only, nothing React', async () => {
+    const t = await student({ course: 'js' });
+    expect(t).toContain('← React');
+    expect(t).toContain('163h 5m over 68 study days');
+    const order = ['Rest this weekend', 'JavaScript: done', 'Mapty refactor done', 'Async/await', 'Closures took you'];
+    const at = order.map((x) => t.indexOf(x));
+    expect(at.every((i) => i >= 0), `missing: ${order.filter((_, i) => at[i] < 0)}`).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(t).toContain('Rahul · note');
+    for (const x of ['From Rahul', 'Studied away from the player?', 'Sign off', 'This week', 'Three weeks in', 'Your numbers']) expect(t).not.toContain(x);
+  });
+  it('?course=js marks NOTHING read: no From Rahul (it marks on sight), no "New" mark that could never clear', async () => {
+    const el = await StudentPage({ searchParams: Promise.resolve({ course: 'js' }) });
+    expect(findAll(el, FromRahul)).toEqual([]);
+    const html = renderToString(el);
+    expect(html).not.toContain('from-rahul');
+    // the never-seen JS note is shown (not lost) — but as history, without a "New" it could never lose
+    expect(text(el)).toContain('Rest this weekend');
+    expect(text(el)).not.toMatch(/\bNew\b/);
+    expect(markCoachMessagesReadAction).not.toHaveBeenCalled();
+    // (her React page does mark — From Rahul is there, so the check above is not vacuous)
+    expect(findAll(await StudentPage({ searchParams: Promise.resolve({}) }), FromRahul)).toHaveLength(1);
   });
 });

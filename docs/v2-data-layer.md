@@ -23,7 +23,7 @@ renders both with the fixtures through `tests/page-queries.ts` (no database).
 `course` is `ACTIVE_COURSE` (`lib/courses.ts`), or `'js'` on the JS history pages (`?course=js`, both: `getCourseSummary`
 + `listUpdates({ course: 'js', filter: 'all' })` + `getCoachNotes('js', HISTORY_NOTES_MAX)`, read-only).
 **Notes are scoped by time** (v3): a standalone note has no course column — it is the course's whose era it was written in
-(`lib/courses.ts` `noteWindow`; React from `REACT_NOTES_FROM`, Fri 2 Oct 00:00 IST). Every note read uses the same window. Cursors: pass `nextCursor` back as-is (e.g. `?before=<cursor>`);
+(`lib/courses.ts` `noteWindow`; React from `REACT_NOTES_FROM`, Thu 1 Oct 19:32 IST — the minute React went live in prod). Every note read uses the same window. Cursors: pass `nextCursor` back as-is (e.g. `?before=<cursor>`);
 parse a user-supplied one with `decodeCursor` (`lib/feed.ts`, null = invalid → treat as first page). Every list is
 paginated in SQL (keyset on `(created_at, id)`, one round trip with its replies).
 

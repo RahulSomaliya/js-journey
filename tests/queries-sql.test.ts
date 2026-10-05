@@ -52,7 +52,7 @@ describe('her unread replies on older updates (first feed page)', () => {
 });
 
 describe('standalone notes + unread count', () => {
-  const BOUNDARY = '2026-10-01T18:30:00.000Z'; // lib/courses.ts REACT_NOTES_FROM (Fri 2 Oct 00:00 IST)
+  const BOUNDARY = '2026-10-01T14:02:00.000Z'; // lib/courses.ts REACT_NOTES_FROM (Thu 1 Oct 19:32 IST, React live in prod)
   it('notes = every unread one + the most recent read ones, never replies', () => {
     const { sql, params } = q.notesQuery('react-2023', 10).toSQL();
     expect(norm(sql)).toMatch(/"messages"."log_entry_id" is null/);

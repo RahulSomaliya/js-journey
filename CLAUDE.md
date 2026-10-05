@@ -87,7 +87,10 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
   (`notesQuery`), the latest (`latestCoachNote`), the count (`unreadForStudentQuery`) — takes the SAME `noteEra(course)`
   (fixtures: `noteCourse`); a count scoped unlike the list = a badge "1 new" over nothing. `unreadForStudent(course)` =
   unread replies on THAT course's updates + unread notes of its era. Moving `REACT_NOTES_FROM` moves notes between her
-  page and the JS history: first count notes per day READ-ONLY (dates + counts, never bodies).
+  page and the JS history: first count notes READ-ONLY (dates + counts, never bodies) at HOUR resolution around the
+  instant — a per-day count cannot tell a note written before a go-live from one after it. The boundary is never later
+  than React's production go-live (1bcaeeb, Thu 1 Oct 19:32 IST): the first draft's Fri 2 Oct 00:00 filed his
+  launch-evening notes, written on the React page, as JS — hidden from her, an unread one never prompted again.
 - The JS history pages (`?course=js`, both) mark NOTHING read: never `FromRahul` there (marks on sight) and no "New"
   marks (`newMarks={false}`) — an unread JS-era note would read "New" forever. A paged history passes the cursor as
   `withNotes(…, before)`, or every note of the era repeats on every older page.

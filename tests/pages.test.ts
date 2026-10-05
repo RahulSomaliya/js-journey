@@ -50,9 +50,10 @@ function findAll(node: ReactNode, type: unknown): unknown[] {
   return [...(node.type === type ? [node] : []), ...findAll(node.props.children, type)];
 }
 
-// v3 (spec B2): Rahul's notes written before React went live (lib/courses.ts REACT_NOTES_FROM) are the
-// JS course's — fixtures: "Closures took you…" (Aug, read), "JavaScript: done…" (26 Sep, read) and
-// "Rest this weekend…" (Thu 1 Oct 23:30 IST, NEVER SEEN by her).
+// v3 (spec B2): Rahul's notes written before React went live (lib/courses.ts REACT_NOTES_FROM, Thu 1 Oct 19:32
+// IST) are the JS course's — fixtures: "Closures took you…" (Aug, read), "JavaScript: done…" (26 Sep, read) and
+// "Rest this weekend…" (Thu 1 Oct 18:00 IST, NEVER SEEN by her). "React starts Monday…" (same day, 21:30 IST,
+// from the live React coach page) is React's.
 const JS_NOTES = ['Closures took you', 'JavaScript: done', 'Rest this weekend'];
 
 describe('/r — the coach view', () => {
@@ -241,6 +242,14 @@ describe('v3: the JS course\'s notes live behind "JavaScript course history" on 
     // the never-seen JS note is not in her React count: the badge and the block agree
     expect(feed.unreadForStudent).toBe(unreadFromRahul(feed).length);
     expect(await student()).toContain(`${unreadFromRahul(feed).length} new`);
+  });
+  it('launch evening: a note he wrote on the live React coach page (Thu 1 Oct 21:30 IST) is React\'s — never the JS history', async () => {
+    expect(await student({ updates: 'all' })).toContain('React starts Monday');
+    expect(await coach()).toContain('React starts Monday');
+    for (const js of [await student({ course: 'js' }), await coach({ course: 'js' })]) {
+      expect(js).not.toContain('React starts Monday');
+      expect(js).toContain('Rest this weekend'); // the same day at 18:00 IST, on the JS pages: JS's
+    }
   });
   it('a quiet link at the bottom: "JavaScript course history →" (?course=js)', async () => {
     const html = renderToString(await StudentPage({ searchParams: Promise.resolve({}) }));

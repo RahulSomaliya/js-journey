@@ -127,10 +127,11 @@ function repliesFor(s: Scenario, rows: UpdateRow[]): MessageRow[] {
   ];
 }
 
-// Notes from the JS era (before REACT_NOTES_FROM). The last one, Thu 1 Oct 23:30 IST, she never saw: v3 puts it
-// in the JS history (shown, never marked read there) and no React list or count includes it.
+// Notes from the JS era (before REACT_NOTES_FROM, Thu 1 Oct 19:32 IST). The last one, Thu 1 Oct 18:00 IST on the
+// JS pages, she never saw: v3 puts it in the JS history (shown, never marked read there) and no React list or count
+// includes it. The same evening's "React starts Monday" (fixtureNotes) came from the live React page: React's.
 const JS_ERA_NOTES: CoachMessage[] = [
-  { id: uuid('88888888', 3), body: 'Rest this weekend. React on Monday — new app, same rhythm.', createdAt: '2026-10-01T18:00:00.000Z', readAt: null },
+  { id: uuid('88888888', 3), body: 'Rest this weekend. React on Monday — new app, same rhythm.', createdAt: '2026-10-01T12:30:00.000Z', readAt: null },
   { id: uuid('88888888', 2), body: 'JavaScript: done. 163 hours over 68 days — I am so proud of you 🎉', createdAt: '2026-09-26T16:30:00.000Z', readAt: '2026-09-27T03:10:00.000Z' },
   { id: uuid('88888888', 1), body: 'Closures took you two evenings and you did not quit. That is the whole skill.', createdAt: '2026-08-12T15:30:00.000Z', readAt: '2026-08-12T16:05:00.000Z' },
 ];
@@ -139,7 +140,7 @@ const JS_ERA_NOTES: CoachMessage[] = [
  *  SQL), newest first. Default: the React course, what every React list shows. */
 export function fixtureNotes(s: Scenario, course: CourseId = ACTIVE_COURSE): CoachMessage[] {
   const react: CoachMessage[] = s === 'empty' ? [] : [
-    { id: uuid('99999999', 1), body: 'React starts Monday. Same rhythm as JS: 2.5 hours, five days, and tell me when something is fuzzy.', createdAt: '2026-10-04T05:00:00.000Z', readAt: '2026-10-04T09:12:00.000Z' },
+    { id: uuid('99999999', 1), body: 'React starts Monday. Same rhythm as JS: 2.5 hours, five days, and tell me when something is fuzzy.', createdAt: '2026-10-01T16:00:00.000Z', readAt: '2026-10-04T09:12:00.000Z' }, // launch evening, 21:30 IST
   ];
   if (s === 'typical') react.unshift({ id: uuid('99999999', 2), body: 'Three weeks in and you have not missed a study day. Proud of you. Dinner is on me Friday 🍕', createdAt: '2026-10-20T16:30:00.000Z', readAt: null });
   return [...react, ...JS_ERA_NOTES].filter((n) => noteCourse(n.createdAt) === course);

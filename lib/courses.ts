@@ -26,8 +26,14 @@ export interface CourseDef {
 
 /** Rahul's notes from here on are React's; before it they belong to the finished JS course (v3, Rahul
  *  2026-10-05: his JS notes stop filling "Your updates" and his notes list, and live in the JS history).
- *  Fri 2 Oct 00:00 IST: JS was finished (last update 26 Sep), React went live on the pages that week. */
-export const REACT_NOTES_FROM = '2026-10-02T00:00:00+05:30';
+ *  = the minute React went live in PRODUCTION: merge 1bcaeeb pushed to main Thu 1 Oct 19:32:16 IST (Vercel
+ *  deploys main), rounded DOWN. Before it the pages knew only JS; from it on the coach page — and its "Send
+ *  her a note" — opened on React. Never move it later than the go-live: the first draft said Fri 2 Oct 00:00,
+ *  which filed his launch-evening notes (written on the React page) as JS — gone from her player, /m and his
+ *  list, and an unread one never prompted again (the JS history marks nothing read). Earlier is the safe side:
+ *  a JS note shown on React costs a line; a React note filed as JS is lost. Moving it = count notes READ-ONLY
+ *  first (CLAUDE.md failure log). */
+export const REACT_NOTES_FROM = '2026-10-01T19:32:00+05:30';
 
 const COURSES: Record<CourseId, CourseDef> = {
   js: {

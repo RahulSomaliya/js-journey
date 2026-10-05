@@ -56,6 +56,11 @@ describe('lib/fixtures', () => {
     expect(js.filter((n) => n.readAt === null)).toHaveLength(1); // the one she never saw — the JS history shows it
     expect(fixtureNotes('empty', 'js')).toEqual(js); // the JS history is the same whatever React's state
   });
+  it('v3: launch day (Thu 1 Oct) splits at the minute React went live — the JS page\'s note before, the React page\'s after', () => {
+    const launchDay = (n: { createdAt: string }) => n.createdAt.startsWith('2026-10-01');
+    expect(fixtureNotes('typical', 'js').filter(launchDay).map((n) => n.body.slice(0, 17))).toEqual(['Rest this weekend']); // 18:00 IST
+    expect(fixtureNotes('typical').filter(launchDay).map((n) => n.body.slice(0, 19))).toEqual(['React starts Monday']); // 21:30 IST
+  });
   it('a small page limit yields a real cursor (pagination UI can be exercised)', () => {
     const f = fixtureFeed('typical', 5);
     expect(f.updates).toHaveLength(5);

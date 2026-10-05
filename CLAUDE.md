@@ -94,3 +94,6 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
 - The JS history pages (`?course=js`, both) mark NOTHING read: never `FromRahul` there (marks on sight) and no "New"
   marks (`newMarks={false}`) — an unread JS-era note would read "New" forever. A paged history passes the cursor as
   `withNotes(…, before)`, or every note of the era repeats on every older page.
+- Vercel runtime logs reach back only about an HOUR on this plan (2026-10-05: a query "since Oct 3" returned just the
+  last hour), so a lost sign-off from the morning leaves no trace there by afternoon. Debug the player from its own
+  `.player/data/outbox-mansi.json` (`lastError`, `rejected`) instead, or query the moment it is reported.

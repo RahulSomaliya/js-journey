@@ -20,6 +20,9 @@ export async function GET(req: Request): Promise<Response> {
   }
   const course = new URL(req.url).searchParams.get('course');
   if (!course) return apiJson({ error: 'course query parameter is required, e.g. ?course=react-2023' }, 400);
+  // 404 + the words "unknown course" are a CONTRACT: the course player matches them (course-player
+  // server/journey.ts isUnknownCourse) to show Mansi "course not recognised". Reworded or re-coded, her app
+  // goes silent again about a wrong course id (her sign-off was lost that way, 2026-10-05). Same in lib/feed.ts.
   if (!isCourseId(course)) return apiJson({ error: `unknown course "${course}"` }, 404);
 
   // Catch DB failures here instead of letting them reach Next's default 500: that is an

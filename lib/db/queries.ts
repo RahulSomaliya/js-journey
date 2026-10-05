@@ -1,12 +1,12 @@
 import 'server-only';
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { db } from './index';
 import { sections, logEntries, messages, progressSnapshots } from './schema';
 import type { Section, LogEntry, NewLog } from '@/lib/schedule';
 import type { CourseId } from '@/lib/courses';
 import type { ProgressSnapshot, ValidSnapshot, JourneyFeed, CoachMessage } from '@/lib/player';
 import { assembleFeed, assemblePage, toCoachMessage, type FeedCursor, type FeedUpdate } from '@/lib/feed';
-import { getCourse } from '@/lib/courses';
+import { getCourse, noteWindow } from '@/lib/courses';
 import { buildOverview, type Overview } from '@/lib/overview';
 
 // Every section/log read is scoped to ONE course: the schedule engine assumes the
@@ -98,7 +98,7 @@ export async function getProgressSnapshot(course: CourseId): Promise<ProgressSna
 
 /** Plan status + the stats row she sees, for both v2 pages (lib/overview.ts). 4 reads, in parallel. */
 export async function loadOverview(course: CourseId, now: Date = new Date()): Promise<Overview> {
-  const [sections, logs, note, snapshot] = await Promise.all([getSections(course), getLogs(course), latestCoachNote(), getProgressSnapshot(course)]);
+  const [sections, logs, note, snapshot] = await Promise.all([getSections(course), getLogs(course), latestCoachNote(course), getProgressSnapshot(course)]);
   return buildOverview({
     now, sections, logs, config: getCourse(course).plan, snapshot,
     coachNote: note ? { body: note.body, createdAt: note.createdAt } : null,
@@ -128,11 +128,27 @@ export interface Message { id: string; createdAt: string; author: 'coach' | 'stu
 function toMessage(r: typeof messages.$inferSelect): Message {
   return { id: r.id, createdAt: r.createdAt.toISOString(), author: r.author, kind: r.kind, body: r.body, sectionId: r.sectionId, resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null };
 }
-// the latest STANDALONE note (JourneyStatus.coachNote) — a reply to one update is not "a note"
-export async function latestCoachNote(): Promise<Message | null> {
-  const rows = await db.select().from(messages)
-    .where(and(eq(messages.author, 'coach'), eq(messages.kind, 'encouragement'), isNull(messages.logEntryId)))
+// ---- standalone notes are scoped to a course by TIME (lib/courses.ts noteWindow) ----------------
+// A note has no course column: it is the course's when written inside the course's era. EVERY note read
+// (the list, the latest one, the unread count) takes this one condition — a list scoped one way and a
+// count scoped another is a badge saying "1 new" over nothing (or a note she can see but never counted).
+function noteEra(course: CourseId): SQL | undefined {
+  const w = noteWindow(course);
+  return and(
+    w.from ? gte(messages.createdAt, w.from) : undefined,
+    w.until ? lt(messages.createdAt, w.until) : undefined,
+  );
+}
+const standaloneNotes = (course: CourseId) => and(eq(messages.author, 'coach'), isNull(messages.logEntryId), noteEra(course));
+
+// the latest STANDALONE note of the course's era (JourneyStatus.coachNote) — a reply to one update is not "a note"
+export function latestCoachNoteQuery(course: CourseId) {
+  return db.select().from(messages)
+    .where(and(standaloneNotes(course), eq(messages.kind, 'encouragement')))
     .orderBy(desc(messages.createdAt)).limit(1);
+}
+export async function latestCoachNote(course: CourseId): Promise<Message | null> {
+  const rows = await latestCoachNoteQuery(course);
   return rows[0] ? toMessage(rows[0]) : null;
 }
 export interface NewMessage { author: 'coach' | 'student'; kind: 'encouragement' | 'stuck'; body: string; sectionId?: number | null; }
@@ -199,15 +215,17 @@ export async function listUpdates(a: UpdatesQuery): Promise<{ updates: FeedUpdat
   return assemblePage(rows, replies, a.limit);
 }
 
-// Standalone notes are few: every unread one (she must see them all) + the `recent` newest.
-export function notesQuery(recent: number) {
-  const standalone = and(eq(messages.author, 'coach'), isNull(messages.logEntryId));
+// Standalone notes of the course's era are few: every unread one (she must see them all) + the `recent` newest.
+export function notesQuery(course: CourseId, recent: number) {
+  const standalone = standaloneNotes(course);
   const recentIds = db.select({ id: messages.id }).from(messages).where(standalone).orderBy(desc(messages.createdAt)).limit(recent);
   return db.select(messageColumns).from(messages)
     .where(and(standalone, or(isNull(messages.studentReadAt), inArray(messages.id, recentIds))))
     .orderBy(desc(messages.createdAt), desc(messages.id));
 }
 export const RECENT_NOTES = 10;
+/** a finished course's history pages list every note of its era (bounded; the JS era is months, not years) */
+export const HISTORY_NOTES_MAX = 500;
 
 // Her unread replies live on ANY update — Rahul can reply from his history, or to an unread update
 // older than her first page. "From Rahul" is built from the first feed page, so the first page also
@@ -234,9 +252,16 @@ export function repliesForUnreadReplyUpdatesQuery(course: CourseId) {
     .where(and(eq(messages.author, 'coach'), inArray(messages.logEntryId, ids)));
 }
 
-export function unreadForStudentQuery() {
+// Her unread count for ONE course = exactly what that course's pages can show her: replies on the
+// course's updates (the feed + unreadReplies only ever carry them) and unread notes of its era (notesQuery
+// lists every unread one). Unscoped, a JS-era note — no longer on the React pages (v3) — or a reply on a
+// JS update was counted on the player's badge forever with nothing to show for it.
+export function unreadForStudentQuery(course: CourseId) {
   return db.select({ n: sql<number>`count(*)::int` }).from(messages)
-    .where(and(eq(messages.author, 'coach'), isNull(messages.studentReadAt)));
+    .where(and(eq(messages.author, 'coach'), isNull(messages.studentReadAt), or(
+      inArray(messages.logEntryId, db.select({ id: logEntries.id }).from(logEntries).where(eq(logEntries.course, course))),
+      and(isNull(messages.logEntryId), noteEra(course)),
+    )));
 }
 
 /** GET /api/player/feed and her web page — ONE round trip. Notes and unreadReplies ride on the FIRST
@@ -245,18 +270,19 @@ export async function getJourneyFeed(course: CourseId, cursor: FeedCursor | null
   const a: UpdatesQuery = { course, filter: 'all', cursor, limit };
   if (cursor === null) {
     const [rows, replies, unread, notes, unreadReplyRows, unreadReplyReplies] = await db.batch([
-      updatesPageQuery(a), repliesForPageQuery(a), unreadForStudentQuery(), notesQuery(RECENT_NOTES),
+      updatesPageQuery(a), repliesForPageQuery(a), unreadForStudentQuery(course), notesQuery(course, RECENT_NOTES),
       unreadReplyUpdatesQuery(course), repliesForUnreadReplyUpdatesQuery(course),
     ]);
     return assembleFeed({ rows, replies, unreadForStudent: unread[0]?.n ?? 0, first: { notes, unreadReplyRows, unreadReplyReplies } }, limit);
   }
-  const [rows, replies, unread] = await db.batch([updatesPageQuery(a), repliesForPageQuery(a), unreadForStudentQuery()]);
+  const [rows, replies, unread] = await db.batch([updatesPageQuery(a), repliesForPageQuery(a), unreadForStudentQuery(course)]);
   return assembleFeed({ rows, replies, unreadForStudent: unread[0]?.n ?? 0, first: null }, limit);
 }
 
-/** Standalone notes for the coach page (same rule as the feed: unread + the recent ones). */
-export async function getCoachNotes(): Promise<CoachMessage[]> {
-  return (await notesQuery(RECENT_NOTES)).map(toCoachMessage);
+/** Standalone notes of the course's era, newest first (same rule as the feed: unread + the `recent` newest) —
+ *  his notes list on /r (RECENT_NOTES), and a finished course's history pages (HISTORY_NOTES_MAX). */
+export async function getCoachNotes(course: CourseId, recent: number = RECENT_NOTES): Promise<CoachMessage[]> {
+  return (await notesQuery(course, recent)).map(toCoachMessage);
 }
 
 export async function countUnreadUpdates(course: CourseId): Promise<number> {

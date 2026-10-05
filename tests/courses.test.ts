@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ACTIVE_COURSE, COURSE_IDS, getCourse, isCourseId, sectionIdFor, sectionNumberOf,
+  ACTIVE_COURSE, COURSE_IDS, REACT_NOTES_FROM, getCourse, isCourseId, noteCourse, noteWindow, sectionIdFor, sectionNumberOf,
 } from '@/lib/courses';
 import { JS_PLAN, REACT_PLAN, TIME_ZONE } from '@/lib/config';
 import {
@@ -33,6 +33,24 @@ describe('course registry', () => {
     expect(sectionIdFor('js', 6)).toBe(6);
     expect(sectionNumberOf('react-2023', 107)).toBe(7);
     expect(sectionNumberOf('react-2023', 7)).toBeNull(); // a JS id is not a React section
+  });
+});
+
+describe('note eras — Rahul\'s standalone notes carry no course, so they belong to the course of their time', () => {
+  it('React\'s notes start Fri 2 Oct 00:00 IST (the JS course was done, React went live)', () => {
+    expect(REACT_NOTES_FROM).toBe('2026-10-02T00:00:00+05:30');
+    expect(new Date(REACT_NOTES_FROM).toISOString()).toBe('2026-10-01T18:30:00.000Z');
+  });
+  it('the eras tile time: JS until the boundary (exclusive), React from it, open-ended', () => {
+    const boundary = new Date(REACT_NOTES_FROM);
+    expect(noteWindow('js')).toEqual({ from: null, until: boundary });
+    expect(noteWindow('react-2023')).toEqual({ from: boundary, until: null });
+  });
+  it('noteCourse puts a note on the right side of the boundary, to the millisecond', () => {
+    expect(noteCourse('2026-06-20T10:00:00.000Z')).toBe('js');
+    expect(noteCourse('2026-10-01T18:29:59.999Z')).toBe('js'); // 23:59:59.999 IST, Thu 1 Oct
+    expect(noteCourse('2026-10-01T18:30:00.000Z')).toBe('react-2023');
+    expect(noteCourse('2026-10-04T05:00:00.000Z')).toBe('react-2023'); // "React starts Monday" (fixtures)
   });
 });
 

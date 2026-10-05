@@ -60,7 +60,7 @@ export default async function CoachPage({ searchParams }: Props) {
     loadOverview(course),
     listUpdates({ course, filter: 'unread', cursor: null, limit: UNREAD_LIMIT }),
     listUpdates({ course, filter: 'read', cursor: null, limit: HISTORY_LIMIT }),
-    getCoachNotes(),
+    getCoachNotes(course),
   ]);
   const { today, stats, status } = overview;
   const newest = unread.updates[0] ?? history.updates[0] ?? null;

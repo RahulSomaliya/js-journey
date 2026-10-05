@@ -182,6 +182,7 @@ describe('GET /api/player/status', () => {
     expect(res.headers.get('cache-control')).toMatch(/no-store/);
     expect(m.getSections).toHaveBeenCalledWith('react-2023');
     expect(m.getLogs).toHaveBeenCalledWith('react-2023');
+    expect(m.latestCoachNote).toHaveBeenCalledWith('react-2023'); // v3: the note of the course's era
     expect(await res.json()).toEqual({
       pace: 'on-track',
       daysDelta: 0,

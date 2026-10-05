@@ -30,7 +30,7 @@ export async function GET(req: Request): Promise<Response> {
   let logs: Awaited<ReturnType<typeof getLogs>>;
   let note: Awaited<ReturnType<typeof latestCoachNote>>;
   try {
-    [sections, logs, note] = await Promise.all([getSections(course), getLogs(course), latestCoachNote()]);
+    [sections, logs, note] = await Promise.all([getSections(course), getLogs(course), latestCoachNote(course)]);
   } catch (e) {
     console.error(`[player] status for ${course} failed`, e);
     return apiJson({ error: 'could not read status right now; retry later' }, 500);

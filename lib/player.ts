@@ -23,6 +23,11 @@ export interface ProgressSnapshot {
   current: { sectionNumber: number; lectureNumber: number; title: string } | null;
   /** local date "YYYY-MM-DD" -> seconds studied; last 120 days at most */
   days: Record<string, number>;
+  /** v4: section number -> the lecture numbers she has done in it, ascending. The pace counts her lecture
+   *  content from it (lib/status.ts) and the coach page's week → section → lecture view marks it
+   *  (lib/outline.ts). Optional: an older player sends none — the pace then reads videoSecondsDone and the
+   *  lectures carry no marks. */
+  doneLectures?: Record<string, number[]>;
 }
 
 export interface JourneySession {
@@ -52,7 +57,9 @@ export interface JourneySession {
 
 export interface JourneyStatus {
   pace: 'ahead' | 'on-track' | 'behind';
-  /** study days ahead (+) or behind (-) the plan */
+  /** study days ahead (+) or behind (-) the plan. v4: her lecture content (latest snapshot) vs the plan
+   *  prorated to the START of today, in the current week's content per study day; |delta| < 1 = on track
+   *  (lib/status.ts planPace). The words come from this number alone. */
   daysDelta: number;
   week: number;
   totalWeeks: number;
@@ -80,7 +87,26 @@ export interface JourneyStatus {
    *  none — the player hides "See full plan" then. The pages' Overview.status leaves it out (they print
    *  planRows(overview) directly). */
   plan?: PlanRow[];
+  /** v4: the plan's first study day, "YYYY-MM-DD" (React: 2026-10-05) — where the 30-day average starts */
+  startDate?: string;
+  /** v4: the plan's study minutes per study day (React: 150 = 2.5 h) — a day at or over it is "goal met" */
+  dailyGoalMinutes?: number;
+  /** v4: where her CURRENT pace lands; null until there is a snapshot and ≥ 2 elapsed study days with study
+   *  (and once every counted lecture is done). Words: lib/journey-view.ts projectionLine. */
+  projection?: {
+    /** the study day she finishes on at this pace, "YYYY-MM-DD" (breaks skipped) */
+    finish: string;
+    /** whole study days left at this pace */
+    studyDaysLeft: number;
+    /** lecture (video) minutes of COUNTED sections she covers per elapsed study day so far */
+    minutesPerStudyDay: number;
+    /** study days between finish and targetDate: + = before the target, - = after it */
+    vsTarget: number;
+  } | null;
 }
+
+/** JourneyStatus.projection when there is one. */
+export type Projection = NonNullable<JourneyStatus['projection']>;
 
 /** One row of the plan: a study week (its goal, due Friday, state) or a break where it falls. */
 export type PlanRow =
@@ -147,6 +173,8 @@ export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 export const NOTE_MAX = 10_000;
 const LECTURES_MAX = 1_000;
 const SNAPSHOT_DAYS_MAX = 400; // the player keeps ≤ 120; headroom so an off-by-a-few never drops a snapshot
+/** doneLectures: at most this many lecture numbers in all, each at most this (React has 410 lectures) */
+const DONE_LECTURES_MAX = 1_000;
 /** How far ahead of the SERVER's clock a snapshot's takenAt may be (her Mac's clock drifting). The upsert
  *  is "newest takenAt wins" (lib/db/queries.ts upsertSnapshotQuery): one far-future row (a Mac set to 2100)
  *  would answer "stale" to every honest snapshot after it, for good — and a takenAt past the JS Date range
@@ -342,6 +370,7 @@ export function parseProgressSnapshot(body: unknown, now: number = Date.now()): 
       days[key] = seconds;
     }
 
+    const doneLectures = parseDoneLectures(b.doneLectures, course);
     return {
       course,
       takenAt: b.takenAt,
@@ -352,9 +381,35 @@ export function parseProgressSnapshot(body: unknown, now: number = Date.now()): 
       sectionsDone: [...new Set(sectionsDone)].sort((x, y) => x - y),
       current,
       days,
+      // absent stays absent: an older player's snapshot is stored exactly as before
+      ...(doneLectures ? { doneLectures } : {}),
     };
   });
   return r.ok ? { ok: true, snapshot: r.value } : r;
+}
+
+// v4 ProgressSnapshot.doneLectures: optional (absent or null = an older player — none), strict when present:
+// keys are real section numbers of the course written plainly ("7", not "07"), values strictly ascending
+// lecture numbers ≥ 1, ≤ DONE_LECTURES_MAX in all. A wrong one fails the SNAPSHOT, never a session: a
+// session's progress is dropped with progressIgnored (parseJourneySession), only PUT /progress answers 400.
+function parseDoneLectures(raw: unknown, course: CourseId): Record<string, number[]> | null {
+  if (raw === undefined || raw === null) return null;
+  check(isRecord(raw), 'doneLectures must be an object of section number -> lecture numbers');
+  const out: Record<string, number[]> = {};
+  let total = 0;
+  for (const [key, list] of Object.entries(raw)) {
+    check(/^[1-9]\d{0,3}$/.test(key) && sectionIdFor(course, Number(key)) !== null, `doneLectures key "${key}" is not a section of ${course}`);
+    check(
+      Array.isArray(list) && list.every((n) => isPosInt(n) && n <= DONE_LECTURES_MAX),
+      `doneLectures["${key}"] must be lecture numbers from 1 to ${DONE_LECTURES_MAX}`,
+    );
+    const lectures: number[] = list;
+    check(lectures.every((n, i) => i === 0 || n > lectures[i - 1]), `doneLectures["${key}"] must be ascending with no repeats`);
+    total += lectures.length;
+    check(total <= DONE_LECTURES_MAX, `doneLectures has more than ${DONE_LECTURES_MAX} lectures`);
+    out[key] = [...lectures];
+  }
+  return out;
 }
 
 // POST /api/player/feed/read body: { ids: uuid[] } — coach message ids she has seen.

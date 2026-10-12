@@ -171,6 +171,40 @@ describe('parseProgressSnapshot', () => {
     expect(snapErr({ ...SNAPSHOT, current: { sectionNumber: 99, lectureNumber: 1, title: 'x' } })).toMatch(/current.sectionNumber 99/);
     expect(snapErr({ ...SNAPSHOT, current: { sectionNumber: 7 } })).toMatch(/^current /);
   });
+  it('v4 doneLectures is optional: absent (an older player) or null = none, and the stored copy has no key', () => {
+    const r = parseProgressSnapshot(SNAPSHOT);
+    expect(r.ok && 'doneLectures' in r.snapshot).toBe(false);
+    const n = parseProgressSnapshot({ ...SNAPSHOT, doneLectures: null });
+    expect(n.ok && 'doneLectures' in n.snapshot).toBe(false);
+  });
+  it('v4 doneLectures: section number → ascending lecture numbers, kept as sent (04, a plan-skipped section, too)', () => {
+    const doneLectures = { '1': [1, 2, 3, 5], '4': [2], '7': [] };
+    const r = parseProgressSnapshot({ ...SNAPSHOT, doneLectures });
+    expect(r.ok && r.snapshot.doneLectures).toEqual(doneLectures);
+  });
+  it('v4 doneLectures: a present-but-wrong value fails the snapshot (PUT /progress 400s; a session only drops it)', () => {
+    expect(snapErr({ ...SNAPSHOT, doneLectures: [] })).toMatch(/^doneLectures must be an object/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '40': [1] } })).toMatch(/doneLectures key "40" is not a section of react-2023/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '07': [1] } })).toMatch(/doneLectures key "07"/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { abc: [1] } })).toMatch(/doneLectures key "abc"/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': [0] } })).toMatch(/doneLectures\["1"\] must be lecture numbers/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': [1.5] } })).toMatch(/doneLectures\["1"\] must be lecture numbers/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': '1,2' } })).toMatch(/doneLectures\["1"\] must be lecture numbers/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': [2, 1] } })).toMatch(/doneLectures\["1"\] must be ascending with no repeats/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': [1, 1] } })).toMatch(/ascending with no repeats/);
+  });
+  it('v4 doneLectures is bounded (a runaway payload never reaches the database)', () => {
+    const upTo = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': upTo(600), '3': upTo(401) } })).toMatch(/doneLectures has more than 1000 lectures/);
+    expect(snapErr({ ...SNAPSHOT, doneLectures: { '1': [1_001] } })).toMatch(/doneLectures\["1"\] must be lecture numbers/);
+  });
+  it('v4 a session whose doneLectures is wrong still lands — its progress is ignored, never a 400', () => {
+    const r = parseJourneySession(body({ progress: { ...SNAPSHOT, doneLectures: { '1': [2, 1] } } }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.session.progress).toBeNull();
+    expect(r.progressIgnored).toMatch(/^progress ignored: doneLectures\["1"\]/);
+  });
   it('rejects bad day keys and impossible day totals', () => {
     expect(snapErr({ ...SNAPSHOT, days: { '5 Oct': 60 } })).toMatch(/days key "5 Oct"/);
     expect(snapErr({ ...SNAPSHOT, days: { '2026-10-05': 90_000 } })).toMatch(/days\["2026-10-05"\]/);

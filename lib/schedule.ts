@@ -105,15 +105,50 @@ export function buildMilestones(sections: Section[], config: ScheduleConfig): We
   }
   return out;
 }
+/** One plan week's stretch of the course — planRows' goal text and the coach page's week → section view
+ *  (lib/outline.ts weekOutline) read the same one. `through` = the counted section its goal finishes; `after`
+ *  = the section number the previous week's goal finished (0 for week 1); `continues` = for a "keep going"
+ *  week whose milestone repeats the previous week's section (React 29 = 7.9 h leaves week 9 on 28 again),
+ *  the next counted section — the one that week is really about. */
+export interface PlanWeek { milestone: WeeklyMilestone; through: Section; after: number; continues: Section | null; }
+export function planWeeks(sections: Section[], config: ScheduleConfig): PlanWeek[] {
+  const core = coreSections(sections);
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  const out: PlanWeek[] = [];
+  let prev: Section | null = null;
+  for (const milestone of buildMilestones(sections, config)) {
+    const through = byId.get(milestone.throughSectionId);
+    if (!through) continue;
+    const repeat = prev !== null && prev.id === through.id;
+    const continues = repeat ? core.find((c) => c.sortOrder > through.sortOrder) ?? null : null;
+    out.push({ milestone, through, after: prev?.sortOrder ?? 0, continues });
+    prev = through;
+  }
+  return out;
+}
 // the sections one log row marks finished: its own section (manual tick / player
 // finished its main section) plus any finished mid-session (player only)
 export function sectionsFinishedBy(l: LogEntry): number[] {
   const ids = l.finishedSection && l.sectionId != null ? [l.sectionId] : [];
   return l.alsoFinishedIds?.length ? [...ids, ...l.alsoFinishedIds] : ids;
 }
+/** Section ids the LOGS mark finished. Never the answer to "is it finished?" on its own (v4, 2026-10-12): a
+ *  section she finished outside a session, or with one article left unticked, is in no log — that alone made
+ *  her "Behind by 3 days" while 2 days ahead. Pages and status read doneSectionIds (logs ∪ the snapshot). */
 export function finishedSectionIds(logs: LogEntry[]): Set<number> {
   const ids = new Set<number>();
   for (const l of logs) for (const id of sectionsFinishedBy(l)) ids.add(id);
+  return ids;
+}
+/** "Finished" everywhere a page or the status reads it (plan rows, the goal, the pace's logs path, the
+ *  coach page's ✓ marks): the logs (sectionsFinishedBy) ∪ her latest snapshot's `sectionsDone` (section
+ *  NUMBERS, mapped to ids through `sections`). Never logs alone — see finishedSectionIds. */
+export function doneSectionIds(sections: Section[], logs: LogEntry[], sectionsDone: readonly number[] | null | undefined): Set<number> {
+  const ids = finishedSectionIds(logs);
+  for (const n of sectionsDone ?? []) {
+    const s = sections.find((x) => x.sortOrder === n);
+    if (s) ids.add(s.id);
+  }
   return ids;
 }
 // a section counts as finished on its EARLIEST finished-row date: with append-only
@@ -129,19 +164,24 @@ function earliestFinishDates(logs: LogEntry[]): Map<number, string> {
   }
   return m;
 }
-export function currentSection(sections: Section[], logs: LogEntry[]): Section | null {
-  const done = finishedSectionIds(logs);
+/** The first counted section not finished (doneSectionIds: logs ∪ the snapshot's sectionsDone). */
+export function currentSection(sections: Section[], logs: LogEntry[], sectionsDone: readonly number[] | null = null): Section | null {
+  const done = doneSectionIds(sections, logs, sectionsDone);
   return coreSections(sections).find((s) => !done.has(s.id)) ?? null;
 }
 // completed STUDY weeks before today (break days don't count)
 export function studyWeeksElapsed(today: string, config: ScheduleConfig): number {
   return Math.floor(studyDaysBetween(config.startDate, today, config.breaks) / config.studyDaysPerWeek);
 }
-function contentDoneMinutes(sections: Section[], logs: LogEntry[]): number {
-  const done = finishedSectionIds(logs);
+function contentDoneMinutes(sections: Section[], logs: LogEntry[], sectionsDone: readonly number[] | null): number {
+  const done = doneSectionIds(sections, logs, sectionsDone);
   return coreSections(sections).filter((s) => done.has(s.id)).reduce((sum, s) => sum + s.videoMinutes, 0);
 }
-export function computePace(args: { today: string; sections: Section[]; logs: LogEntry[]; config: ScheduleConfig }): PaceResult {
+// NOT the pace (that is lib/status.ts planPace): only the coach email's "% of the course done" reads this.
+// `sectionsDone` = her latest snapshot's (finished = logs ∪ snapshot); omitted = logs only.
+export function computePace(args: {
+  today: string; sections: Section[]; logs: LogEntry[]; config: ScheduleConfig; sectionsDone?: readonly number[] | null;
+}): PaceResult {
   const { today, sections, logs, config } = args;
   const perWeek = contentMinutesPerWeek(config);
   const total = coreContentMinutes(sections);
@@ -152,7 +192,7 @@ export function computePace(args: { today: string; sections: Section[]; logs: Lo
   const studyDaysElapsed = studyDaysBetween(config.startDate, today, config.breaks);
   const notStarted = diffDays(config.startDate, today) < 0;
   const idealContentMinutes = Math.min(total, Math.round((perWeek / config.studyDaysPerWeek) * studyDaysElapsed));
-  const contentMinutesDone = contentDoneMinutes(sections, logs);
+  const contentMinutesDone = contentDoneMinutes(sections, logs, args.sectionsDone ?? null);
   const effortMinutes = logs.reduce((s, l) => s + l.minutes, 0);
   const effortBudgetMinutes = Math.round(total * config.multiplier);
   const gapMinutes = contentMinutesDone - idealContentMinutes;
@@ -254,7 +294,8 @@ export interface DynamicSchedule {
 // from the date she finished her last section, crediting time banked early — and
 // re-anchored to today (honest "behind") once a section's deadline has passed.
 // NOT the pace pill: its projection swings for a student exactly on plan (+3 on day 1, −5 in the last
-// week) — the pill is lib/status.ts planPace. Pages use only `currentSection` from here.
+// week) — the pill is lib/status.ts planPace; her projection is lib/status.ts planProjection. Since v4 no page
+// reads it (Overview.currentSection follows her snapshot's "Continue", lib/overview.ts): only its tests do.
 export function buildDynamicSchedule(
   sections: Section[],
   logs: LogEntry[],

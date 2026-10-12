@@ -1,14 +1,15 @@
 import { TIME_ZONE } from '@/lib/config';
-import { addDays, diffDays, studyDaysBetween, todayInTZ } from '@/lib/date';
+import { STUDY_WEEKDAYS, addDays, diffDays, studyDaysBetween, todayInTZ } from '@/lib/date';
 import { fmtDate, fmtDur, fmtWhen, plural, sectionTag } from '@/lib/format';
-import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type PlanRow, type StudentUpdate } from '@/lib/player';
-import { buildMilestones, coreSections, finishedSectionIds, type ScheduleConfig, type Section } from '@/lib/schedule';
+import { MOOD_LABELS, isPlayerMood, type CoachMessage, type JourneyFeed, type JourneyStatus, type PlanRow, type Projection, type StudentUpdate } from '@/lib/player';
+import { coreSections, doneSectionIds, planWeeks, type ScheduleConfig, type Section } from '@/lib/schedule';
 import type { Overview } from '@/lib/overview';
+import { contentVsPlan, planContentThrough } from '@/lib/status';
 
 // What the v2 pages (/m hers, /r his) print — pure, over the data layer's shapes, so the words are
 // tested once (tests/journey-view.test.ts) and both pages agree.
 // MIRRORS of the Course Player (change both apps together, or she reads one thing on her Mac and
-// another on her phone): paceLabel + weekView = course-player web/src/lib/week.ts;
+// another on her phone): paceLabel + weekView + projectionLine = course-player web/src/lib/week.ts;
 // unreadFromRahul / replyContext / snippet = web/src/lib/feed.ts.
 
 const days = (n: number) => plural(Math.abs(n), 'day');
@@ -62,22 +63,23 @@ export type { PlanRow };
 
 /** The coach's plan list AND her plan in the player (GET /api/player/status `plan`): every plan week's
  *  goal with its status, each break placed where it falls. "Done" = every counted section up to the
- *  goal's is finished (sectionsFinishedBy, via finishedSectionIds) — the same rule as JourneyStatus.goal,
- *  so the two never disagree. Changing a row = changing the player contract: course-player
- *  shared/types.ts PlanRow mirrors lib/player.ts PlanRow. */
-export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'status' | 'today'>): PlanRow[] {
-  const { sections, logs, config, status, today } = o;
-  const done = finishedSectionIds(logs);
+ *  goal's is finished — doneSectionIds: the logs ∪ her latest snapshot's sectionsDone, the same rule as
+ *  JourneyStatus.goal, so the two never disagree. A past week that is not done reads "Behind" only when her
+ *  lecture CONTENT is short of its goal (contentVsPlan, the pill's unit): on 2026-10-12 week 1 said "Behind"
+ *  (01 had one unticked article) right under "Ahead by 2 days" — now it is a quiet 'past' week, like a "keep
+ *  going" one. No snapshot → the logs decide alone, as before. Changing a row = changing the player
+ *  contract: course-player shared/types.ts PlanRow mirrors lib/player.ts PlanRow. */
+export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'status' | 'today' | 'snapshot'>): PlanRow[] {
+  const { sections, logs, config, status, today, snapshot } = o;
+  const done = doneSectionIds(sections, logs, snapshot?.sectionsDone);
+  const vsPlan = contentVsPlan({ today, sections, logs, config, snapshot });
+  const shortOf = (s: Section) => (vsPlan ? vsPlan(planContentThrough(sections, s.id)) < 0 : true);
   const core = coreSections(sections);
-  const byId = new Map(sections.map((s) => [s.id, s]));
   const doneThrough = (s: Section) => core.filter((c) => c.sortOrder <= s.sortOrder).every((c) => done.has(c.id));
 
   const rows: PlanRow[] = [];
   const placed = new Set<string>();
-  let prevThrough: number | null = null;
-  for (const m of buildMilestones(sections, config)) {
-    const through = byId.get(m.throughSectionId);
-    if (!through) continue;
+  for (const { milestone: m, through, continues } of planWeeks(sections, config)) {
     // a break sits before the first week that ends after it (Diwali: between weeks 4 and 5)
     for (const b of config.breaks) {
       if (b.end >= config.startDate && b.end < m.dueDate && !placed.has(b.start)) {
@@ -85,19 +87,31 @@ export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'sta
         rows.push({ kind: 'break', label: b.label, start: b.start, end: b.end, now: b.start <= today && today <= b.end });
       }
     }
-    // A section longer than a week (React §29 = 7.9 h) leaves the next week's milestone on the SAME
+    // A section longer than a week (React 29 = 7.9 h) leaves the next week's milestone on the SAME
     // section: that week is about the next one — "Keep going", and never "behind" mid-section.
-    const repeat = m.throughSectionId === prevThrough;
-    const next = repeat ? core.find((c) => c.sortOrder > through.sortOrder) : undefined;
-    const target = next ?? through;
-    const met = doneThrough(target);
+    const met = doneThrough(continues ?? through);
     const state: Extract<PlanRow, { kind: 'week' }>['state'] = met ? 'done'
-      : m.dueDate < today ? (next ? 'past' : 'behind')
+      : m.dueDate < today ? (!continues && shortOf(through) ? 'behind' : 'past')
         : m.week === status.week ? 'current' : 'upcoming';
-    rows.push({ kind: 'week', week: m.week, due: m.dueDate, goal: next ? `Keep going: ${sectionTag(next.sortOrder)} ${next.title}` : goalText({ sectionNumber: through.sortOrder, title: through.title }), state });
-    prevThrough = m.throughSectionId;
+    const goal = continues
+      ? `Keep going: ${sectionTag(continues.sortOrder)} ${continues.title}`
+      : goalText({ sectionNumber: through.sortOrder, title: through.title });
+    rows.push({ kind: 'week', week: m.week, due: m.dueDate, goal, state });
   }
   return rows;
+}
+
+/** "At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 4 weeks before your
+ *  target." Split around the date so a page can set it in bold. `who`: 'you' = her (/m, the player), 'her' =
+ *  the coach page. |vsTarget| < 3 study days → "right around your target"; ≥ 5 → weeks (5 study days each,
+ *  rounded), else days. MIRROR: course-player web/src/lib/week.ts — the same test table
+ *  (tests/journey-view.test.ts PROJECTION_CASES); change both together. */
+export function projectionLine(p: Projection, who: 'you' | 'her'): { lead: string; date: string; tail: string } {
+  const [pace, will, target] = who === 'you' ? ['your', 'you’ll', 'your target'] : ['her', 'she’ll', 'her target'];
+  const off = Math.abs(p.vsTarget);
+  const span = off >= STUDY_WEEKDAYS.length ? plural(Math.round(off / STUDY_WEEKDAYS.length), 'week') : plural(off, 'day');
+  const tail = off < 3 ? `, right around ${target}.` : `, ${span} ${p.vsTarget > 0 ? 'before' : 'after'} ${target}.`;
+  return { lead: `At ${pace} pace — about ${fmtDur(p.minutesPerStudyDay)} of lectures a study day — ${will} finish around `, date: fmtDate(p.finish), tail };
 }
 
 /** Study days without an update (today included) from which the coach page nudges him. */
@@ -152,6 +166,15 @@ export function unreadFromRahul(feed: JourneyFeed): FromRahulItem[] {
 
 export type HistoryItem<U extends StudentUpdate = StudentUpdate> = { kind: 'update'; update: U } | { kind: 'note'; note: CoachMessage };
 
+/** The coach history's default day: the LATEST studyDate among the updates (dates are "YYYY-MM-DD", so they
+ *  compare as strings). Not the first item's: the list is newest by ARRIVAL, and a late backfill for an older
+ *  day once hid yesterday's updates behind "Older updates" (review 2026-10-12). null = no update. */
+export function newestStudyDay(items: HistoryItem[]): string | null {
+  let day: string | null = null;
+  for (const i of items) if (i.kind === 'update' && (day === null || i.update.studyDate > day)) day = i.update.studyDate;
+  return day;
+}
+
 /** "Your updates" with Rahul's standalone notes interleaved by time, newest first. Her page marks a note
  *  read as soon as "From Rahul" shows it, and read notes rendered nowhere — one visit (the email link)
  *  and a note was gone from both her apps. `complete` = these updates reach her oldest one (no older
@@ -205,7 +228,7 @@ export function replyContext(update: Pick<StudentUpdate, 'studyDate' | 'note'>, 
   return { lead, quote: update.note === null || update.note.trim() === '' ? null : snippet(update.note) };
 }
 
-/** "1h 15m · §10 Thinking in React… · 3 lectures"; minutes 0 = a note-only update. */
+/** "1h 15m · 10 Thinking in React… · 3 lectures"; minutes 0 = a note-only update. */
 export function updateFacts(u: Pick<StudentUpdate, 'minutes' | 'sectionNumber' | 'sectionTitle' | 'lectures'>): string[] {
   const facts = [u.minutes > 0 ? fmtDur(u.minutes) : 'Note only'];
   if (u.sectionNumber !== null) facts.push(`${sectionTag(u.sectionNumber)}${u.sectionTitle ? ` ${u.sectionTitle}` : ''}`);

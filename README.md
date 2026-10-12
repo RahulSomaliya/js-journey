@@ -16,7 +16,7 @@ now his *Ultimate React Course* (2023) — and lets her coach (Rahul) review it 
 | `js` — Complete JavaScript (finished) | Mon 22 Jun 2026 | 2.5 h/day × 5 | 2.5× | Fri 25 Sep | Fri 2 Oct |
 | `react-2023` — Ultimate React (active) | Mon 5 Oct 2026 | 2.5 h/day × 5 | 1.75× | Fri 25 Dec | Fri 1 Jan 2027 |
 
-React: 30 counted sections (every folder except §04 *Review of Essential JavaScript*) = 3916 video-min (65.3 h) → 114.2 study-hours → 10 study weeks + 1 grace week.
+React: 30 counted sections (every folder except 04 *Review of Essential JavaScript*) = 3916 video-min (65.3 h) → 114.2 study-hours → 10 study weeks + 1 grace week.
 Plan breaks (`ScheduleConfig.breaks`) are days with no study: **Diwali, Sun 1 – Sun 15 Nov 2026** (10 study days) moves the
 target and deadline two weeks later (from Fri 11 / Fri 18 Dec). Pace, due dates and the daily no-log email skip break
 days (the streak is the player's: calendar days with ≥ 5 min, so a break ends it — same number in both apps). Constants: `lib/config.ts`; curricula: `lib/curriculum.ts`; pinned in `tests/courses.test.ts`.
@@ -26,10 +26,10 @@ days (the streak is the player's: calendar days with ≥ 5 min, so a break ends 
 Contract types mirror `~/Developer/course-player/shared/types.ts` (`lib/player.ts`) — change both together.
 
 - `POST /api/player/sessions` — body `JourneySession` (one sign-off = one update for Rahul). 201 stored · 200 duplicate (dedup on `session.id`, unique `log_entries.external_id`) · 400 invalid (message names the field) · 401 bad token · 500 transient (player retries). Section `NN` of the course maps to section id `100 + NN`. `minutes` may be 0 only with a note; `stuck` / `autoClosed` are stored; `progress` is upserted as the course's snapshot (newest `takenAt` wins) — an unusable `progress` is dropped (`progress: "ignored"`), never the update.
-- `GET /api/player/status?course=react-2023` — `JourneyStatus`: pace, this plan week's `goal`, `sectionDue` (plan-week Friday per section), `skippedSections`, `planBreak` (the break in progress, else the next within 14 days, else null). 400 without `course`, 404 for an unknown course, 401 bad token.
+- `GET /api/player/status?course=react-2023` — `JourneyStatus`: pace (her lecture content from the latest snapshot vs the plan prorated to the start of today), this plan week's `goal`, `sectionDue` (plan-week Friday per section), `skippedSections`, `planBreak` (the break in progress, else the next within 14 days, else null), `plan` (her plan rows), `startDate`, `dailyGoalMinutes`, `projection` (where her current pace lands, or null). 400 without `course`, 404 for an unknown course, 401 bad token.
 - `GET /api/player/feed?course=react-2023&cursor=&limit=30` — `JourneyFeed`: her updates newest first with Rahul's replies, his notes and `unreadReplies` (older updates carrying a reply she has not seen — both first page only), her unread count; paginated with the opaque `nextCursor`. 400 bad cursor/limit.
 - `POST /api/player/feed/read` — `{ ids }` of coach messages she has seen; idempotent (`{ status: "ok", marked }`).
-- `PUT /api/player/progress` — `ProgressSnapshot`; `{ status: "stored" | "stale" }` (newest `takenAt` wins); 400 for a `takenAt` more than 24 h ahead of the server clock (one far-future snapshot would lock out every later one).
+- `PUT /api/player/progress` — `ProgressSnapshot` (v4: optional `doneLectures`, section number → ascending lecture numbers); `{ status: "stored" | "stale" }` (newest `takenAt` wins); 400 for a `takenAt` more than 24 h ahead of the server clock (one far-future snapshot would lock out every later one) or a malformed `doneLectures`.
 
 All answers are `Cache-Control: no-store`; 4xx only for input that can never succeed (the player's outbox drops it). Data layer for the pages: [`docs/v2-data-layer.md`](docs/v2-data-layer.md).
 

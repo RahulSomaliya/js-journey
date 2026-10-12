@@ -27,6 +27,8 @@ import { createElement, isValidElement, type ReactNode } from 'react';
 import CoachPage, { generateMetadata } from '@/app/r/[token]/page';
 import StudentPage from '@/app/m/[token]/page';
 import { StatsRow } from '@/components/stats-row';
+import { NoteComposer } from '@/components/coach/note-composer';
+import { PlanList } from '@/components/coach/plan-list';
 import { FromRahul } from '@/components/student/from-rahul';
 import { fixtureInbox, fixtureFeed, fixtureOverview } from '@/lib/fixtures';
 import { unreadFromRahul } from '@/lib/journey-view';
@@ -37,6 +39,9 @@ const student = async (sp: Record<string, string> = {}) => text(await StudentPag
 /** visible text, one line (tags dropped, entities decoded) */
 const text = (el: Parameters<typeof renderToString>[0]) =>
   renderToString(el).replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/\s+/g, ' ');
+
+/** the page's markup (tags kept) — for attributes and structure, which `text` drops */
+const markup = async (sp: Record<string, string> = {}) => renderToString(await CoachPage({ params: Promise.resolve({ token: 't' }), searchParams: Promise.resolve(sp) }));
 
 beforeEach(() => {
   state.q = { scenario: 'typical', extraUnread: 0 };
@@ -104,7 +109,7 @@ describe('/r — the coach view', () => {
   });
   it('v3: his notes list holds only React-era notes — the JS ones are in the JS history, among her updates by time', async () => {
     const t = await coach();
-    expect(t).toContain('Three weeks in and you have not missed a study day');
+    // (his React notes list is folded away now, v4 — the composer test below; the JS ones must still be absent)
     for (const n of JS_NOTES) expect(t).not.toContain(n);
     const js = await coach({ course: 'js' });
     const order = ['Rest this weekend', 'JavaScript: done', 'Mapty refactor done', 'Async/await', 'Closures took you'];
@@ -118,6 +123,86 @@ describe('/r — the coach view', () => {
   });
 });
 
+// v4 coach page (docs/spec-v4-pace-and-coach.md in course-player, "Coach page" + "Chart + daily goal").
+describe('/r — v4: plan accordion, history by day, folded note, projection, goal met', () => {
+  // Rahul (2026-10-12) asked for weeks he can expand — the page opens with every week CLOSED (he keeps the
+  // coach page short); opening this week opens the section she is in.
+  const planOpenAt = async (week: number) => {
+    const [el] = findAll(await CoachPage({ params: Promise.resolve({ token: 't' }), searchParams: Promise.resolve({}) }), PlanList) as { props: Parameters<typeof PlanList>[0] }[];
+    if (!el) throw new Error('no PlanList on /r');
+    return renderToString(createElement(PlanList, { ...el.props, initialOpenWeek: week }));
+  };
+  it('the plan: every week is a button and all start closed — no lecture rows until he opens one', async () => {
+    const h = await markup();
+    const weeks = [...h.matchAll(/<button type="button" aria-expanded="(true|false)" aria-controls="week-(\d+)"/g)];
+    expect(weeks.length).toBeGreaterThanOrEqual(8); // the break row is not a button
+    expect(weeks.filter((m) => m[1] === 'true')).toEqual([]);
+    expect(h).not.toMatch(/aria-controls="week-section-/);
+  });
+  it('an open week shows its Part → section → lecture view', async () => {
+    const h = await planOpenAt(3); // typical (Wed 21 Oct): week 3
+    expect(h).toContain('data-week="1"');
+    expect(h).toMatch(/<p [^>]*>Part <!-- -->2<\/p>|>Part 2</); // the Part header: overline + title
+    expect(h).toContain('2 projects');
+    expect(h).not.toContain('§');
+  });
+  it('opening a week opens the section she is in when it is in that week (from the outline, not the row state)', async () => {
+    const h = await planOpenAt(3);
+    const current = h.match(/data-section="(\d+)" data-current="true"/);
+    expect(current, 'a current section in the open week').not.toBeNull();
+    const section = current?.[1] ?? '';
+    expect(h).toMatch(new RegExp(`aria-expanded="true" aria-controls="week-section-${section}"`));
+    expect(h).toMatch(/aria-expanded="false" aria-controls="week-section-/); // the others stay closed
+    expect(h).toContain('she’s here');
+  });
+  it('only the open section renders its lectures', async () => {
+    const h = await planOpenAt(3);
+    const open = (h.match(/aria-expanded="true" aria-controls="week-section-/g) ?? []).length;
+    expect(open).toBe(1); // only the current section's lectures were rendered
+  });
+  it('history: only the newest study day, then a quiet "Older updates" button — the pager waits behind it', async () => {
+    const t = await coach();
+    const history = t.slice(t.indexOf('History'));
+    expect(history).toContain('Part 2 starts tomorrow'); // 20 Oct, the newest read day
+    expect(history).not.toContain('Far Away app finished');
+    expect(history).not.toContain('Steps component');
+    const h = await markup();
+    expect(h).toMatch(/<button type="button"[^>]*>Older updates</);
+    expect(h).not.toContain('Older updates →'); // the pager link is revealed with the rest, not beside the button
+  });
+  it('an older page (?before=) lists every update of the page, no folding', async () => {
+    const next = fixtureInbox('typical').history.nextCursor;
+    const h = await markup({ before: next ?? '' });
+    expect(h).not.toMatch(/<button type="button"[^>]*>Older updates</);
+  });
+  it('"Send Mansi a note" is folded: one button, no box, until clicked', async () => {
+    const h = await markup();
+    expect(h).toMatch(/aria-expanded="false" aria-controls="note-panel"[^>]*>Send Mansi a note</);
+    expect(h).not.toContain('Something for her to read next time');
+    expect(h).not.toContain('Send note');
+  });
+  it('the projection line sits under her numbers, the date in bold; absent while there is none', async () => {
+    const withIt = await markup();
+    expect(withIt).toMatch(/At her pace — about [^<]+ of lectures a study day — she’ll finish around <span class="font-medium text-ink">[^<]+<\/span>/);
+    expect(withIt.indexOf('At her pace')).toBeGreaterThan(withIt.indexOf('Her numbers'));
+    expect(withIt.indexOf('At her pace')).toBeLessThan(withIt.indexOf('Last 30 days'));
+    state.q = { scenario: 'empty', extraUnread: 0 };
+    expect(await coach()).not.toContain('At her pace');
+  });
+  it('goal met: the day\'s bar is marked with a ✓, a short day is not; Today says so only when met', async () => {
+    const ov = fixtureOverview('typical');
+    const metDays = ov.stats.last30.days.filter((d) => d.met).length;
+    expect(metDays).toBeGreaterThan(0);
+    const h = await markup();
+    expect(h.match(/data-goal-met="true"/g)).toHaveLength(metDays);
+    expect(h.match(/data-goal-check/g)?.length).toBe(metDays + (ov.stats.today.met ? 1 : 0));
+    const row = (met: boolean) => renderToString(createElement(StatsRow, { stats: { ...ov.stats, today: { ...ov.stats.today, met } }, viewer: 'coach' }));
+    expect(row(true)).toContain('Daily goal met');
+    expect(row(false)).not.toContain('Daily goal met');
+    expect(row(false)).not.toContain('data-goal-check');
+  });
+});
+
 describe('/m — her view', () => {
   it('Rahul’s words first, then this week, her numbers, her updates, the manual sign-off', async () => {
     const t = await student();
@@ -127,18 +212,18 @@ describe('/m — her view', () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(t).toContain(`${fixtureFeed('typical').unreadForStudent} new`);
     expect(t).toContain('On yesterday’s update');
-    expect(t).toContain('Finish §12 Effects and Data Fetching by Fri 23 Oct');
+    expect(t).toContain('Finish 12 Effects and Data Fetching by Fri 23 Oct');
     expect(t).toContain('JavaScript — finished Sat 26 Sep');
   });
   it('pace: typical (on schedule) never reads Behind; behind always says by how much — pill and Due stat agree', async () => {
-    // (§11 "How React Works Behind the Scenes" is a section title, not a pace)
+    // (11 "How React Works Behind the Scenes" is a section title, not a pace)
     const pace = /\b(Behind|Ahead)\b(?! the Scenes)/;
     expect(await student()).not.toMatch(pace);
     expect(await coach()).not.toMatch(pace);
     state.q = { scenario: 'behind', extraUnread: 0 };
     // /r: up to the plan list, whose per-week "Behind" is a week's status (week 2 missed), not the pace
     for (const t of [await student(), (await coach()).split(' Plan ')[0]]) {
-      expect(t.match(/Behind by 5 days/g)?.length).toBe(2); // the pill + the Due stat
+      expect(t.match(/Behind by 6 days/g)?.length).toBe(2); // the pill + the Due stat
       expect(t).not.toMatch(/\bBehind\b(?! by \d| the Scenes)/);
     }
   });
@@ -169,7 +254,7 @@ describe('/m — her view', () => {
   it('the course due date is the Due stat\'s alone — not repeated in This week (/m) or the header (/r)', async () => {
     const t = await student();
     const week = t.slice(t.indexOf('This week'), t.indexOf('Today'));
-    expect(week).toContain('Finish §12 Effects and Data Fetching by Fri 23 Oct');
+    expect(week).toContain('Finish 12 Effects and Data Fetching by Fri 23 Oct');
     expect(week).toContain('On track');
     expect(week).not.toMatch(/due|Fri 25 Dec/i);
     expect(t.match(/Fri 25 Dec/g)).toHaveLength(1); // the Due stat
@@ -212,7 +297,7 @@ describe('/m — her view', () => {
   });
   it('home shows her 5 newest updates and "See all"; ?updates=all lists the whole feed page', async () => {
     const home = await student();
-    const shown = (t: string) => (t.slice(t.indexOf('Your updates'), t.indexOf('Studied away')).match(/\d+[hm](?: \d+m)? · §|Note only · §/g) ?? []).length;
+    const shown = (t: string) => (t.slice(t.indexOf('Your updates'), t.indexOf('Studied away')).match(/\d+[hm](?: \d+m)? · \d\d |Note only · \d\d /g) ?? []).length;
     expect(home).toContain('See all');
     expect(shown(home)).toBe(5);
     const all = await student({ updates: 'all' });
@@ -245,7 +330,10 @@ describe('v3: the JS course\'s notes live behind "JavaScript course history" on 
   });
   it('launch evening: a note he wrote on the live React coach page (Thu 1 Oct 21:30 IST) is React\'s — never the JS history', async () => {
     expect(await student({ updates: 'all' })).toContain('React starts Monday');
-    expect(await coach()).toContain('React starts Monday');
+    // his notes box is folded on /r (v4): its list is a prop of the composer, not markup, until it opens
+    const composer = findAll(await CoachPage({ params: Promise.resolve({ token: 't' }), searchParams: Promise.resolve({}) }), NoteComposer) as { props: { notes: { body: string }[] } }[];
+    expect(composer).toHaveLength(1);
+    expect(composer[0].props.notes.map((n) => n.body).join(' ')).toContain('React starts Monday');
     for (const js of [await student({ course: 'js' }), await coach({ course: 'js' })]) {
       expect(js).not.toContain('React starts Monday');
       expect(js).toContain('Rest this weekend'); // the same day at 18:00 IST, on the JS pages: JS's

@@ -1,15 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { computeJourneyStatus, planPace } from '@/lib/status';
+import { computeJourneyStatus, planExpectedMinutes, planPace } from '@/lib/status';
 import { buildMilestones, coreSections, type LogEntry } from '@/lib/schedule';
 import { addDays, isStudyDay } from '@/lib/date';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
-import { REACT_SECTION_DUE } from './helpers';
+import type { ProgressSnapshot } from '@/lib/player';
+import { REACT_SECTION_DUE, WEEK1_LOGS, WEEK1_SNAPSHOT } from './helpers';
 
 const finished = (date: string, ...numbers: number[]): LogEntry[] =>
   numbers.map((n) => ({ id: `f${n}`, studyDate: date, minutes: 60, sectionId: 100 + n, finishedSection: true }));
+// no snapshot: the logs-only reading (the v4 snapshot model has its own blocks at the end)
 const status = (today: string, logs: LogEntry[], coachNote: { body: string; createdAt: string } | null = null) =>
-  computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote });
+  computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote, snapshot: null });
+const V4_FIELDS = { startDate: '2026-10-05', dailyGoalMinutes: 150, projection: null };
 const DIWALI = { label: 'Diwali', start: '2026-11-01', end: '2026-11-15' };
 
 
@@ -29,9 +32,10 @@ describe('computeJourneyStatus (React plan)', () => {
       skippedSections: [4],
       studyWeekdays: [1, 2, 3, 4, 5],
       planBreaks: [DIWALI], // every break, always — the player's streak walks back through them
+      ...V4_FIELDS, // no snapshot → no projection
     });
   });
-  it('idle in week 3: behind, goal = this plan week\'s goal (spec: "Finish §12 … by Fri 23 Oct")', () => {
+  it('idle in week 3: behind, goal = this plan week\'s goal (spec: "Finish 12 … by Fri 23 Oct")', () => {
     const s = status('2026-10-20', finished('2026-10-06', 1, 2, 3));
     expect(s.pace).toBe('behind');
     expect(s.daysDelta).toBe(-7); // week 2's goal (through §09, 708 content-min) missed: 601 min short = 7.0 study days
@@ -119,6 +123,7 @@ describe('computeJourneyStatus over the Diwali break (Sun 1 – Sun 15 Nov)', ()
       skippedSections: [4],
       studyWeekdays: [1, 2, 3, 4, 5],
       planBreaks: [DIWALI],
+      ...V4_FIELDS,
     });
     expect({ ...status('2026-10-30', onPlan), planBreak: DIWALI }).toEqual(mid);
   });
@@ -128,7 +133,7 @@ describe('computeJourneyStatus over the Diwali break (Sun 1 – Sun 15 Nov)', ()
 // and the dynamic projection for the number, so the typical fixture read a bare "Behind" while the plan
 // list said week 3 was on schedule. Both of those swing for a student who is EXACTLY on plan (probe:
 // projection +3 on day 1 = the plan's slack, −5 on Thu 24 Dec; prorated "behind" every Wed/Thu).
-describe('planPace — the weekly goals are the plan', () => {
+describe('planPace without a snapshot — the weekly goals over whole sections from the logs', () => {
   const core = coreSections(REACT_CURRICULUM);
   const milestones = buildMilestones(REACT_CURRICULUM, REACT_PLAN);
   // finishes each week's goal ON its Friday, nothing early
@@ -137,7 +142,7 @@ describe('planPace — the weekly goals are the plan', () => {
     const to = core.find((c) => c.id === m.throughSectionId)?.sortOrder ?? 0;
     return core.filter((c) => c.sortOrder > from && c.sortOrder <= to).map((c) => ({ id: `p${c.id}`, studyDate: m.dueDate, minutes: 150, sectionId: c.id, finishedSection: true }));
   });
-  const pace = (today: string, logs: LogEntry[]) => planPace({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN });
+  const pace = (today: string, logs: LogEntry[]) => planPace({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, snapshot: null });
 
   it('exactly on plan reads On track on EVERY study day — mid-week, the first day, the last week', () => {
     for (let d = '2026-10-05'; d <= '2026-12-31'; d = addDays(d, 1)) {
@@ -168,5 +173,120 @@ describe('planPace — the weekly goals are the plan', () => {
       const p = status(today, logs);
       expect([today, p.pace]).toEqual([today, p.daysDelta < 0 ? 'behind' : p.daysDelta > 0 ? 'ahead' : 'on-track']);
     }
+  });
+});
+
+// v4 (2026-10-12, spec-v4 "The pace is wrong"): Monday of week 2 she was on 07 lecture 1 with 06 done, and
+// both apps said "Behind by 3 days". Root cause: "finished" came from session logs alone (no session ever
+// reported 01 — one article in it is unticked) and only WHOLE sections in order counted, so the loop stopped
+// at 01 and credited nothing: 281 content-min owed for week 1 ÷ 85.8 a study day = "Behind by 3 days".
+describe('v4 pace — content from her latest snapshot, prorated to the START of today', () => {
+  const v4 = (today: string, snapshot: ProgressSnapshot | null, logs: LogEntry[] = WEEK1_LOGS) =>
+    computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote: null, snapshot });
+
+  it('Mon 12 Oct (today\'s case): Ahead by 2 days, not "Behind by 3 days"', () => {
+    // done     = the snapshot's counted lecture content: 27 360 s of 01–03 + 05–06 = 456 min
+    //            (04 is skipped by the plan; 01's unticked lecture is a 0-second article — content counts)
+    // expected = week 1's goal (through 05: 31 + 1 + 75 + 174 = 281 min) + week 2's content × 0/5 —
+    //            Monday morning holds her to last week's goal exactly; today is not over yet
+    // per day  = week 2's content (06–09: 175 + 162 + 89 + 1 = 427 min) ÷ 5 study days = 85.4 min
+    // delta    = (456 − 281) ÷ 85.4 = 2.05 → +2
+    const s = v4('2026-10-12', WEEK1_SNAPSHOT);
+    expect([s.pace, s.daysDelta]).toEqual(['ahead', 2]);
+    expect(s.goal).toEqual({ sectionNumber: 9, title: 'Part 2 - Intermediate React (2 Projects)', due: '2026-10-16' });
+  });
+  it('without a snapshot the logs-only reading stays (it is exactly what she saw: Behind by 3 days)', () => {
+    expect(planPace({ today: '2026-10-12', sections: REACT_CURRICULUM, logs: WEEK1_LOGS, config: REACT_PLAN, snapshot: null }))
+      .toEqual({ pace: 'behind', daysDelta: -3 });
+  });
+  it('the contract fields: startDate, dailyGoalMinutes (2.5 h a study day), the projection', () => {
+    const s = v4('2026-10-12', WEEK1_SNAPSHOT);
+    expect(s.startDate).toBe('2026-10-05');
+    expect(s.dailyGoalMinutes).toBe(150);
+    // rate = 456 min ÷ 5 elapsed study days (Mon 5 – Fri 9; today has no study yet) = 91.2 → "about 1h 31m"
+    // left = 3918 counted outline min − 456 = 3462 → ⌈3462 ÷ 91.2⌉ = 38 study days, today the first:
+    // Mon 12 Oct … (Diwali skipped) … Wed 16 Dec; target Fri 25 Dec is 7 study days later
+    expect(s.projection).toEqual({ finish: '2026-12-16', studyDaysLeft: 38, minutesPerStudyDay: 91, vsTarget: 7 });
+  });
+  it('expected grows through the week: the same progress reads less ahead each day she adds nothing', () => {
+    const deltas = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17']
+      .map((d) => v4(d, WEEK1_SNAPSHOT).daysDelta);
+    // (456 − (281 + 427 × k/5)) ÷ 85.4 for k = 0..5 study days of week 2 before today: 2.05, 1.05, 0.05, −0.95, −1.95, −2.95
+    expect(deltas).toEqual([2, 1, 0, -1, -2, -3]);
+  });
+  it('|delta| < 1 is On track, and the words come from daysDelta alone', () => {
+    const s = v4('2026-10-14', WEEK1_SNAPSHOT);
+    expect([s.pace, s.daysDelta]).toEqual(['on-track', 0]);
+    const behind = v4('2026-10-15', WEEK1_SNAPSHOT);
+    expect([behind.pace, behind.daysDelta]).toEqual(['behind', -1]);
+  });
+  it('a student exactly on the prorated plan reads On track on every study day (content, not whole sections)', () => {
+    const core = coreSections(REACT_CURRICULUM);
+    const total = core.reduce((sum, c) => sum + c.videoMinutes, 0);
+    for (let d = '2026-10-05'; d <= '2026-12-31'; d = addDays(d, 1)) {
+      if (!isStudyDay(d, REACT_PLAN.breaks)) continue;
+      // her content = the plan's own expectation for this morning (planExpected), no doneLectures: videoSecondsDone
+      const minutes = Math.min(total, planExpectedMinutes(d, REACT_CURRICULUM, REACT_PLAN));
+      const snap = { ...WEEK1_SNAPSHOT, doneLectures: undefined, sectionsDone: [], videoSecondsDone: minutes * 60 };
+      expect([d, v4(d, snap, []).pace, v4(d, snap, []).daysDelta]).toEqual([d, 'on-track', 0]);
+    }
+  });
+  it('without doneLectures: videoSecondsDone minus the plan-skipped sections she finished', () => {
+    const noLectures = { ...WEEK1_SNAPSHOT, doneLectures: undefined };
+    expect(v4('2026-10-12', noLectures).daysDelta).toBe(2); // 27 360 s = 456 min, as above
+    // 04 (skipped, 112 min) finished too: its minutes are not plan content
+    const with04 = { ...noLectures, videoSecondsDone: 27_360 + 6_746, sectionsDone: [2, 3, 4, 5, 6] };
+    expect(v4('2026-10-12', with04).daysDelta).toBe(2);
+  });
+  it('a "keep going" week (React 29 = 7.9 h spans weeks 9–10) expects part of that section, not nothing', () => {
+    // weeks 9 + 10 are ONE stretch: 28 done by Fri 11 Dec (3407 min), the rest (509 min) over its 10 study days
+    expect(planExpectedMinutes('2026-12-14', REACT_CURRICULUM, REACT_PLAN)).toBeCloseTo(3407, 5); // Mon of week 9
+    expect(planExpectedMinutes('2026-12-21', REACT_CURRICULUM, REACT_PLAN)).toBeCloseTo(3407 + 509 / 2, 5); // Mon of week 10
+    expect(planExpectedMinutes('2026-12-26', REACT_CURRICULUM, REACT_PLAN)).toBe(3916); // past the target
+    expect(planExpectedMinutes('2026-10-01', REACT_CURRICULUM, REACT_PLAN)).toBe(0); // before the start
+  });
+  it('a plan break holds the expectation still (Diwali = the Friday before)', () => {
+    expect(planExpectedMinutes('2026-11-09', REACT_CURRICULUM, REACT_PLAN)).toBe(planExpectedMinutes('2026-10-31', REACT_CURRICULUM, REACT_PLAN));
+    expect(planExpectedMinutes('2026-11-16', REACT_CURRICULUM, REACT_PLAN)).toBe(1618); // Mon back: week 4's goal through 16
+  });
+});
+
+describe('v4 "finished" = snapshot sectionsDone ∪ logs (planGoal, never logs alone)', () => {
+  it('a section the snapshot reports done counts for the goal even when no log ever said so', () => {
+    // logs report nothing; the snapshot has 01–09 done → week 2's goal is met, the goal moves to week 3's
+    const snap = { ...WEEK1_SNAPSHOT, sectionsDone: [1, 2, 3, 5, 6, 7, 8, 9], doneLectures: undefined, videoSecondsDone: 708 * 60 };
+    const s = computeJourneyStatus({ today: '2026-10-14', sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null, snapshot: snap });
+    expect(s.goal?.sectionNumber).toBe(12);
+  });
+});
+
+describe('v4 projection — where her CURRENT pace lands', () => {
+  const proj = (today: string, snapshot: ProgressSnapshot | null) =>
+    computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null, snapshot }).projection;
+  // Review 2026-10-12: week 1 is the plan's lightest week (56 min of lectures a study day), so an on-plan
+  // student read "4 weeks after your target" on day 2. Nothing is projected before one full study week.
+  it('null without a snapshot, and until a full study week (5 study days) has elapsed with ≥ 2 days of study', () => {
+    expect(proj('2026-10-12', null)).toBeNull();
+    const week = { ...WEEK1_SNAPSHOT, days: { '2026-10-05': 7200, '2026-10-06': 7200, '2026-10-07': 7200, '2026-10-08': 7200 } };
+    expect(proj('2026-10-06', { ...week, days: { '2026-10-05': 7200, '2026-10-06': 600 } })).toBeNull(); // day 2: too early
+    expect(proj('2026-10-09', week)).toBeNull(); // Fri morning: 4 study days elapsed
+    expect(proj('2026-10-09', { ...week, days: { ...week.days, '2026-10-09': 600 } })).not.toBeNull(); // Fri counts once ≥ 5 min
+    expect(proj('2026-10-09', { ...week, days: { ...week.days, '2026-10-09': 299 } })).toBeNull();
+    expect(proj('2026-10-12', { ...WEEK1_SNAPSHOT, days: { '2026-10-05': 7200 } })).toBeNull(); // a week in, one day of study
+  });
+  it('today counts in the rate only with ≥ 5 min; then the finish counts from tomorrow', () => {
+    const studied = { ...WEEK1_SNAPSHOT, days: { ...WEEK1_SNAPSHOT.days, '2026-10-12': 1800 } };
+    // 456 ÷ 6 = 76 a study day → ⌈3462 ÷ 76⌉ = 46 study days AFTER Mon 12 Oct (Tue 13 is the first) → Tue 29 Dec;
+    // Fri 25 + Mon 28 Dec lie between the target and it → 2 study days after the target
+    expect(proj('2026-10-12', studied)).toEqual({ finish: '2026-12-29', studyDaysLeft: 46, minutesPerStudyDay: 76, vsTarget: -2 });
+  });
+  it('weekend study adds to what she covered, never to the days divided by', () => {
+    const sat = proj('2026-10-10', WEEK1_SNAPSHOT); // Sat: 5 elapsed study days, Saturday's hour is in the content already
+    expect(sat?.minutesPerStudyDay).toBe(91);
+    expect(sat?.finish).toBe('2026-12-16'); // the next study day (Mon 12 Oct) is day 1
+  });
+  it('null once the counted content is all done — nothing left to project', () => {
+    const all = { ...WEEK1_SNAPSHOT, doneLectures: undefined, videoSecondsDone: 3916 * 60, sectionsDone: coreSections(REACT_CURRICULUM).map((c) => c.sortOrder) };
+    expect(proj('2026-12-01', all)).toBeNull();
   });
 });

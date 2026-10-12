@@ -1,11 +1,11 @@
 import { TIME_ZONE } from '@/lib/config';
 import { addDays, inBreak, isoWeekday, todayInTZ, type DayRange } from '@/lib/date';
-import { finishedSectionIds, type LogEntry, type Section } from '@/lib/schedule';
+import { doneSectionIds, type LogEntry, type Section } from '@/lib/schedule';
 import type { JourneyStatus, ProgressSnapshot } from '@/lib/player';
 
 // "The same stats she sees" (spec-v2 decision 7): the Course Player's home row — Today ·
 // Streak · Complete · Due — and its 30-day chart, for the coach view and her web page.
-// MIRROR of course-player web/src/lib/stats.ts (streak, last30, completion) and
+// MIRROR of course-player web/src/lib/stats.ts (streak, last30, studyAverage, goalMet, completion) and
 // screens/home/Stats.tsx (the % label): change a rule there → change it here, or Rahul
 // reads a different number than she does. Both streaks walk the plan calendar JourneyStatus
 // carries (studyWeekdays + planBreaks) — the player gets it from GET /api/player/status.
@@ -24,7 +24,10 @@ export interface JourneyStats {
   source: 'snapshot' | 'sessions';
   /** ISO time the snapshot was taken (her Mac's clock); null when computed from sessions */
   asOf: string | null;
-  today: { date: string; seconds: number };
+  /** met = at or over the plan's daily goal (goalMet) — the Today ✓ "Daily goal met" */
+  today: { date: string; seconds: number; met: boolean };
+  /** the plan's study minutes per study day (JourneyStatus.dailyGoalMinutes; React 150); null = no goal known */
+  dailyGoalMinutes: number | null;
   /** study days in a row with ≥ 5 min, walking back from today (see `streak`) */
   streak: number;
   /** percent 0–100 unrounded; label = the player's figure ("<1%", "42%");
@@ -34,8 +37,9 @@ export interface JourneyStats {
    *  names it). The day she is back is weekView's (lib/journey-view.ts, addDays(end, 1) like the player) —
    *  not repeated here: a second "back on" rule here once disagreed with it (addStudyDays). */
   due: { date: string; pace: JourneyStatus['pace'] | null; daysDelta: number; onBreak: { label: string } | null };
-  /** oldest → today, always 30 days; average over all 30 */
-  last30: { days: { date: string; seconds: number }[]; averageSeconds: number };
+  /** oldest → today, always 30 days; `met` = goalMet (an accent bar + ✓; a short day gets no mark at all);
+   *  averageSeconds = studyAverage: over her plan study days since the start, never all 30 days */
+  last30: { days: { date: string; seconds: number; met: boolean }[]; averageSeconds: number };
   /** the lecture "Continue" points at; null without a snapshot */
   current: ProgressSnapshot['current'];
 }
@@ -58,11 +62,14 @@ export function computeStats(args: {
   const today = todayInTZ(TIME_ZONE, now);
   const days = snapshot ? snapshot.days : secondsByStudyDate(logs);
   const complete = snapshot ? snapshotCompletion(snapshot) : sessionCompletion(logs, sections);
+  const cal: StudyCalendar = { studyWeekdays: status.studyWeekdays, breaks: status.planBreaks };
+  const goal = status.dailyGoalMinutes ?? null;
 
-  const series: { date: string; seconds: number }[] = [];
+  const series: JourneyStats['last30']['days'] = [];
   for (let i = 29; i >= 0; i--) {
     const date = addDays(today, -i);
-    series.push({ date, seconds: days[date] ?? 0 });
+    const seconds = days[date] ?? 0;
+    series.push({ date, seconds, met: goalMet(seconds, goal) });
   }
 
   const brk = status.planBreak;
@@ -73,8 +80,9 @@ export function computeStats(args: {
   return {
     source: snapshot ? 'snapshot' : 'sessions',
     asOf: snapshot ? new Date(snapshot.takenAt).toISOString() : null,
-    today: { date: today, seconds: days[today] ?? 0 },
-    streak: streak(days, today, { studyWeekdays: status.studyWeekdays, breaks: status.planBreaks }),
+    today: { date: today, seconds: days[today] ?? 0, met: goalMet(days[today] ?? 0, goal) },
+    dailyGoalMinutes: goal,
+    streak: streak(days, today, cal),
     complete: { ...complete, label: percentLabel(complete.percent) },
     due: {
       date: status.targetDate,
@@ -82,7 +90,7 @@ export function computeStats(args: {
       daysDelta: status.daysDelta,
       onBreak: onBreak ? { label: brk.label } : null,
     },
-    last30: { days: series, averageSeconds: series.reduce((sum, d) => sum + d.seconds, 0) / series.length },
+    last30: { days: series, averageSeconds: studyAverage(days, today, cal, status.startDate ?? startDate) },
     current: snapshot?.current ?? null,
   };
 }
@@ -112,6 +120,31 @@ export function streak(days: Record<string, number>, today: string, cal: StudyCa
   return count;
 }
 
+/** The 30-day chart's "avg" — the player's rule (course-player web/src/lib/stats.ts studyAverage), same test
+ *  table: every second studied from `start` through today ÷ the plan study days in that range, today counted
+ *  only once it has ≥ 5 min. Weekend / break-day study adds to the total, never to the days. `start` = the
+ *  plan's first day; null → the day of her first study (≥ 5 min). Averaged over all 30 days, her 2 h a day in
+ *  week 1 read "avg 24m" (spec-v4): the days before she started diluted it. 0 before the start. */
+export function studyAverage(days: Record<string, number>, today: string, cal: StudyCalendar, start: string | null): number {
+  const studied = (d: string) => (days[d] ?? 0) >= STREAK_MIN_SECONDS;
+  const from = start ?? Object.keys(days).filter(studied).reduce<string | null>((a, k) => (a === null || k < a ? k : a), null);
+  if (from === null || from > today) return 0;
+  const isStudyDay = (d: string) => cal.studyWeekdays.includes(isoWeekday(d)) && !inBreak(d, cal.breaks);
+  let total = 0;
+  let studyDays = 0;
+  for (let d = from; d <= today; d = addDays(d, 1)) {
+    total += days[d] ?? 0;
+    if (isStudyDay(d) && (d !== today || studied(d))) studyDays++;
+  }
+  return total / Math.max(1, studyDays); // only weekend study so far: that total over one day, never ÷ 0
+}
+
+/** A day "meets the daily goal" at ≥ the plan's study minutes per study day (React 150); no goal (an older
+ *  JS Journey status, 0) → never. Player mirror: web/src/lib/stats.ts goalMet. */
+export function goalMet(seconds: number, dailyGoalMinutes: number | null | undefined): boolean {
+  return dailyGoalMinutes != null && dailyGoalMinutes > 0 && seconds >= dailyGoalMinutes * 60;
+}
+
 function secondsByStudyDate(logs: LogEntry[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const l of logs) out[l.studyDate] = (out[l.studyDate] ?? 0) + l.minutes * 60;
@@ -123,9 +156,9 @@ function snapshotCompletion(s: ProgressSnapshot): Omit<JourneyStats['complete'],
   return { percent, lecturesDone: s.lecturesDone, lecturesTotal: s.lecturesTotal };
 }
 
-// every section counts toward the total (the player's total is the whole course, §04 too)
+// every section counts toward the total (the player's total is the whole course, 04 too)
 function sessionCompletion(logs: LogEntry[], sections: Section[]): Omit<JourneyStats['complete'], 'label'> {
-  const done = finishedSectionIds(logs); // sectionsFinishedBy: mid-session finishes count
+  const done = doneSectionIds(sections, logs, null); // no snapshot here; sectionsFinishedBy: mid-session finishes count
   const total = sections.reduce((sum, s) => sum + s.videoMinutes, 0);
   const finished = sections.filter((s) => done.has(s.id)).reduce((sum, s) => sum + s.videoMinutes, 0);
   const lectures = new Set(logs.flatMap((l) => (l.lecturesCompleted ?? []).map((x) => `${x.section}:${x.lecture}`)));

@@ -21,9 +21,10 @@ export function fmtDate(iso: string): string {
   return `${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} ${MONTHS[m - 1]}`;
 }
 
-// A section's number inside its course, as both views print it: 7 -> "§07".
+// A section's number inside its course, as both views print it: 7 -> "07". Never "§" (Rahul, 2026-10-12:
+// "§09" → "09" everywhere, both apps) — every page and the plan rows the player prints go through here.
 export function sectionTag(sectionNumber: number): string {
-  return `§${String(sectionNumber).padStart(2, '0')}`;
+  return String(sectionNumber).padStart(2, '0');
 }
 
 // Seconds the way the Course Player prints them (its formatDuration): whole minutes, rounded

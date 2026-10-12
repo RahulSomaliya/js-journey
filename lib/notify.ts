@@ -1,7 +1,7 @@
 import 'server-only';
 import { after } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { getSections, getLogs } from '@/lib/db/queries';
+import { getSections, getLogs, getProgressSnapshot } from '@/lib/db/queries';
 import { computePace, type NewLog } from '@/lib/schedule';
 import { planPace } from '@/lib/status';
 import { paceLabel } from '@/lib/journey-view';
@@ -19,10 +19,15 @@ export function afterLogWritten(row: NewLog): void {
   // check-in confetti shouldn't wait on Resend either
   after(async () => {
     try {
-      const [sections, logs] = await Promise.all([getSections(row.course), getLogs(row.course)]);
+      // the snapshot too: the pace words must be the pages' (planPace reads her content from it — without it
+      // the email said "Behind" while both pages said "Ahead")
+      const [sections, logs, snapshot] = await Promise.all([getSections(row.course), getLogs(row.course), getProgressSnapshot(row.course)]);
       const args = { today: row.studyDate, sections, logs, config: getCourse(row.course).plan };
-      // the pace words are the pages' (planPace) — computePace only for "% of the course done"
-      const pace = { label: paceLabel(planPace(args)).label, contentPct: computePace(args).contentPct };
+      // computePace only for "% of the course done" (finished = logs ∪ the snapshot's sectionsDone)
+      const pace = {
+        label: paceLabel(planPace({ ...args, snapshot })).label,
+        contentPct: computePace({ ...args, sectionsDone: snapshot?.sectionsDone ?? null }).contentPct,
+      };
       // subject reflects the DAY, not just this session — logs already include the new row
       const dayTotal = logs.filter((l) => l.studyDate === row.studyDate).reduce((s, l) => s + l.minutes, 0);
       await sendCoachEmail(

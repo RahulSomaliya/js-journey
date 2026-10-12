@@ -38,13 +38,13 @@ export async function POST(req: Request): Promise<Response> {
   try {
     result = await insertPlayerLog(row, session.progress);
   } catch (e) {
-    console.error(`[player] storing session ${session.id} failed (${row.course} §${session.sectionNumber}, ${row.studyDate})`, e);
+    console.error(`[player] storing session ${session.id} failed (${row.course} section ${session.sectionNumber}, ${row.studyDate})`, e);
     return apiJson({ error: 'could not store the session right now; retry later' }, 500);
   }
   const progress = progressIgnored ? 'ignored' : result.progress;
   if (result.log === 'duplicate') return apiJson({ status: 'duplicate', id: session.id, progress }, 200);
 
-  console.log(`[player] stored session ${session.id}: ${row.course} §${session.sectionNumber}, ${row.minutes} min, ${row.studyDate}${row.stuck ? ', stuck' : ''}`);
+  console.log(`[player] stored session ${session.id}: ${row.course} section ${session.sectionNumber}, ${row.minutes} min, ${row.studyDate}${row.stuck ? ', stuck' : ''}`);
   afterLogWritten(row);
   return apiJson({ status: 'created', id: session.id, progress }, 201);
 }

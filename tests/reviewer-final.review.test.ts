@@ -13,7 +13,7 @@ const finishThrough = (n: number, date: string): LogEntry[] => REACT_CURRICULUM
   .filter((s) => s.kind === 'core' && s.sortOrder <= n)
   .map((s) => ({ id: `f${s.id}`, studyDate: date, minutes: s.videoMinutes, sectionId: s.id, finishedSection: true }));
 const status = (today: string, logs: LogEntry[]) => {
-  const s = computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote: null });
+  const s = computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote: null, snapshot: null });
   return { pace: s.pace, daysDelta: s.daysDelta, goal: s.goal, week: s.week };
 };
 

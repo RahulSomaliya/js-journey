@@ -6,7 +6,8 @@ import { TIME_ZONE } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
 import { decodeCursor, type FeedCursor, type FeedUpdate } from '@/lib/feed';
 import { fmtDate, fmtWhen, sectionTag } from '@/lib/format';
-import { caughtUp, courseHistoryLine, planRows, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
+import { outlineFor, weekOutline, type WeekOutline } from '@/lib/outline';
+import { caughtUp, courseHistoryLine, planRows, projectionLine, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
 import { hasNumbers, type Overview } from '@/lib/overview';
 import { COLUMN, PacePill } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -18,6 +19,7 @@ import { UnreadUpdates } from '@/components/coach/unread-updates';
 import { NoteComposer } from '@/components/coach/note-composer';
 import { HistoryReply } from '@/components/coach/history-reply';
 import { PlanList } from '@/components/coach/plan-list';
+import { OlderUpdates } from '@/components/coach/older-updates';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,13 +68,18 @@ export default async function CoachPage({ searchParams }: Props) {
     getCoachNotes(course),
   ]);
   const { today, stats, status } = overview;
+  const projection = status.projection ? projectionLine(status.projection, 'her') : null;
+  const rows = planRows(overview);
+  // the lecture view of every plan week, on the SERVER: a client import would ship the outline JSON (37 KB)
+  const outline = outlineFor(course);
+  const outlines = outline ? Object.fromEntries(rows.flatMap((r) => (r.kind === 'week' ? [[r.week, weekOutline(overview, r.week, outline)] as [number, WeekOutline]] : []))) : null;
   const newest = unread.updates[0] ?? history.updates[0] ?? null;
 
   return (
     <Shell overview={overview}>
       <UnreadUpdates updates={unread.updates} today={today} quiet={caughtUp({ last: newest, today, config: overview.config })} more={unread.nextCursor !== null} />
 
-      <div className="mt-12">
+      <div className="mt-8">
         <NoteComposer notes={notes.map((n) => ({ id: n.id, body: n.body, when: fmtWhen(n.createdAt, today), seen: n.readAt !== null }))} />
       </div>
 
@@ -92,6 +99,11 @@ export default async function CoachPage({ searchParams }: Props) {
             <div className="mt-4">
               <StatsRow stats={stats} viewer="coach" />
             </div>
+            {projection && (
+              <p className="mt-4 text-sm text-ink-muted">
+                {projection.lead}<span className="font-medium text-ink">{projection.date}</span>{projection.tail}
+              </p>
+            )}
             {stats.current && (
               <p className="mt-4 text-sm text-ink-muted">
                 Up next in the player: <span className="text-ink">{sectionTag(stats.current.sectionNumber)} · lecture {stats.current.lectureNumber} — {stats.current.title}</span>
@@ -107,11 +119,11 @@ export default async function CoachPage({ searchParams }: Props) {
       </section>
 
       <div className="mt-16">
-        <PlanList rows={planRows(overview)} meta={`${status.totalWeeks} study weeks · due ${fmtDate(status.targetDate)} · deadline ${fmtDate(status.deadline)}`} />
+        <PlanList rows={rows} outlines={outlines} meta={`${status.totalWeeks} study weeks · due ${fmtDate(status.targetDate)} · deadline ${fmtDate(status.deadline)}`} />
       </div>
 
       <div className="mt-16">
-        <History items={updatesOnly(history.updates)} nextCursor={history.nextCursor} today={today} />
+        <History items={updatesOnly(history.updates)} nextCursor={history.nextCursor} today={today} lastDayOnly />
       </div>
 
       <footer className="mt-16 border-t border-line pt-6">
@@ -146,7 +158,7 @@ function Shell({ overview, children }: { overview: Overview; children: ReactNode
 
 const updatesOnly = (updates: FeedUpdate[]): HistoryItem<FeedUpdate>[] => updates.map((update) => ({ kind: 'update', update }));
 
-function History({ items, nextCursor, today, newest = false, readOnly = false, query = '' }: {
+function History({ items, nextCursor, today, newest = false, readOnly = false, query = '', lastDayOnly = false }: {
   /** her updates; on the JS history, his notes among them (withNotes) */
   items: HistoryItem<FeedUpdate>[];
   nextCursor: string | null;
@@ -157,7 +169,24 @@ function History({ items, nextCursor, today, newest = false, readOnly = false, q
   readOnly?: boolean;
   /** kept on the pager links (?course=js) */
   query?: string;
+  /** the coach home: only the newest study day's updates, the rest of the page behind "Older updates" */
+  lastDayOnly?: boolean;
 }) {
+  // Her study day (IST), not when the update arrived: a 00:10 sign-off still belongs to the evening before.
+  const first = items[0];
+  const day = lastDayOnly && first?.kind === 'update' ? first.update.studyDate : null;
+  const inDay = (i: HistoryItem<FeedUpdate>) => day === null || (i.kind === 'update' && i.update.studyDate === day);
+  const shown = items.filter(inDay);
+  const older = items.filter((i) => !inDay(i));
+  const renderItem = (i: HistoryItem<FeedUpdate>) =>
+    i.kind === 'note' ? (
+      <NoteItem key={i.note.id} note={i.note} today={today} viewer="coach" />
+    ) : (
+      <UpdateItem key={i.update.logId} update={i.update} today={today} viewer="coach" tags={!readOnly}>
+        {!readOnly && <HistoryReply logId={i.update.logId} />}
+      </UpdateItem>
+    );
+  const pager = <Pager nextHref={nextCursor ? `?${query}before=${nextCursor}` : null} newestHref={newest ? `?${query.replace(/&$/, '')}` : null} />;
   return (
     <section aria-labelledby="history-title">
       <div className="border-b border-line pb-4">
@@ -166,15 +195,11 @@ function History({ items, nextCursor, today, newest = false, readOnly = false, q
       {items.length === 0 ? (
         <p className="py-6 text-sm text-ink-muted">{readOnly ? 'No updates were logged for this course.' : 'Updates you have read land here, with your replies.'}</p>
       ) : (
-        items.map((i) => (i.kind === 'note'
-          ? <NoteItem key={i.note.id} note={i.note} today={today} viewer="coach" />
-          : (
-            <UpdateItem key={i.update.logId} update={i.update} today={today} viewer="coach" tags={!readOnly}>
-              {!readOnly && <HistoryReply logId={i.update.logId} />}
-            </UpdateItem>
-          )))
+        <>
+          {shown.map(renderItem)}
+          {older.length > 0 ? <OlderUpdates after={pager}>{older.map(renderItem)}</OlderUpdates> : pager}
+        </>
       )}
-      <Pager nextHref={nextCursor ? `?${query}before=${nextCursor}` : null} newestHref={newest ? `?${query.replace(/&$/, '')}` : null} />
     </section>
   );
 }

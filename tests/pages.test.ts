@@ -127,11 +127,11 @@ describe('/m — her view', () => {
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     expect(t).toContain(`${fixtureFeed('typical').unreadForStudent} new`);
     expect(t).toContain('On yesterday’s update');
-    expect(t).toContain('Finish §12 Effects and Data Fetching by Fri 23 Oct');
+    expect(t).toContain('Finish 12 Effects and Data Fetching by Fri 23 Oct');
     expect(t).toContain('JavaScript — finished Sat 26 Sep');
   });
   it('pace: typical (on schedule) never reads Behind; behind always says by how much — pill and Due stat agree', async () => {
-    // (§11 "How React Works Behind the Scenes" is a section title, not a pace)
+    // (11 "How React Works Behind the Scenes" is a section title, not a pace)
     const pace = /\b(Behind|Ahead)\b(?! the Scenes)/;
     expect(await student()).not.toMatch(pace);
     expect(await coach()).not.toMatch(pace);
@@ -169,7 +169,7 @@ describe('/m — her view', () => {
   it('the course due date is the Due stat\'s alone — not repeated in This week (/m) or the header (/r)', async () => {
     const t = await student();
     const week = t.slice(t.indexOf('This week'), t.indexOf('Today'));
-    expect(week).toContain('Finish §12 Effects and Data Fetching by Fri 23 Oct');
+    expect(week).toContain('Finish 12 Effects and Data Fetching by Fri 23 Oct');
     expect(week).toContain('On track');
     expect(week).not.toMatch(/due|Fri 25 Dec/i);
     expect(t.match(/Fri 25 Dec/g)).toHaveLength(1); // the Due stat
@@ -212,7 +212,7 @@ describe('/m — her view', () => {
   });
   it('home shows her 5 newest updates and "See all"; ?updates=all lists the whole feed page', async () => {
     const home = await student();
-    const shown = (t: string) => (t.slice(t.indexOf('Your updates'), t.indexOf('Studied away')).match(/\d+[hm](?: \d+m)? · §|Note only · §/g) ?? []).length;
+    const shown = (t: string) => (t.slice(t.indexOf('Your updates'), t.indexOf('Studied away')).match(/\d+[hm](?: \d+m)? · \d\d |Note only · \d\d /g) ?? []).length;
     expect(home).toContain('See all');
     expect(shown(home)).toBe(5);
     const all = await student({ updates: 'all' });

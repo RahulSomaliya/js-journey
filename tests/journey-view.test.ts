@@ -32,7 +32,7 @@ describe('weekView', () => {
     expect(weekView(fixtureOverview('typical'))).toEqual({
       week: 'Week 3 of 10',
       startsOn: null,
-      goal: { text: 'Finish §12 Effects and Data Fetching', due: 'Fri 23 Oct' },
+      goal: { text: 'Finish 12 Effects and Data Fetching', due: 'Fri 23 Oct' },
       pace: { label: 'On track', tone: 'good' },
       onBreak: null,
       upcomingBreak: 'Diwali from Sun 1 Nov to Sun 15 Nov',
@@ -57,15 +57,15 @@ describe('planRows — the weekly goals with status, and the break where it fall
       '1:done', '2:done', '3:current', '4:upcoming', 'break:later', '5:upcoming', '6:upcoming', '7:upcoming', '8:upcoming', '9:upcoming', '10:upcoming',
     ]);
     const w3 = rows.find((r) => r.kind === 'week' && r.week === 3);
-    expect(w3).toEqual({ kind: 'week', week: 3, due: '2026-10-23', goal: 'Finish §12 Effects and Data Fetching', state: 'current' });
+    expect(w3).toEqual({ kind: 'week', week: 3, due: '2026-10-23', goal: 'Finish 12 Effects and Data Fetching', state: 'current' });
     expect(rows.find((r) => r.kind === 'break')).toEqual({ kind: 'break', label: 'Diwali', start: '2026-11-01', end: '2026-11-15', now: false });
   });
-  it('a week whose goal is the previous week\'s section (a long §29) says "keep going" on the next one', () => {
+  it('a week whose goal is the previous week\'s section (a long 29) says "keep going" on the next one', () => {
     const rows = planRows(fixtureOverview('typical'));
     const goal = (w: number) => rows.find((r): r is Extract<PlanRow, { kind: 'week' }> => r.kind === 'week' && r.week === w)?.goal;
-    expect(goal(8)).toBe('Finish §28 Advanced React Patterns');
-    expect(goal(9)).toBe('Keep going: §29 Implementing More Features - Authentication, Dark Mode, Dashboard, etc. (Optional)');
-    expect(goal(10)).toBe('Finish §31 The End!');
+    expect(goal(8)).toBe('Finish 28 Advanced React Patterns');
+    expect(goal(9)).toBe('Keep going: 29 Implementing More Features - Authentication, Dark Mode, Dashboard, etc. (Optional)');
+    expect(goal(10)).toBe('Finish 31 The End!');
   });
   it('behind (stopped Thu 8 Oct): a past week that is not met reads behind', () => {
     expect(brief(planRows(fixtureOverview('behind'))).slice(0, 4)).toEqual(['1:done', '2:behind', '3:current', '4:upcoming']);
@@ -164,9 +164,9 @@ describe('updateFacts / moodLabel', () => {
   const all = fixtureUpdates('typical');
   it('time · section · lectures; a note-only update says so', () => {
     const stuck = all.find((u) => u.stuck)!;
-    expect(updateFacts(stuck)).toEqual(['1h 15m', '§10 Thinking in React - Components, Composition, and Reusability', '3 lectures']);
+    expect(updateFacts(stuck)).toEqual(['1h 15m', '10 Thinking in React - Components, Composition, and Reusability', '3 lectures']);
     const noteOnly = all.find((u) => u.minutes === 0)!;
-    expect(updateFacts(noteOnly)).toEqual(['Note only', '§07 Thinking In React - State Management']);
+    expect(updateFacts(noteOnly)).toEqual(['Note only', '07 Thinking In React - State Management']);
     expect(updateFacts({ ...noteOnly, minutes: 30, sectionNumber: null, sectionTitle: null, lectures: [{ section: 7, lecture: 1, title: 'x' }] }))
       .toEqual(['30m', '1 lecture']);
   });

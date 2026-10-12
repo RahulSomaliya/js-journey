@@ -5,7 +5,7 @@ import { ACTIVE_COURSE, getCourse } from '@/lib/courses';
 import { TIME_ZONE } from '@/lib/config';
 import { todayInTZ } from '@/lib/date';
 import { decodeCursor, type FeedCursor, type FeedUpdate } from '@/lib/feed';
-import { fmtDate, fmtWhen } from '@/lib/format';
+import { fmtDate, fmtWhen, sectionTag } from '@/lib/format';
 import { caughtUp, courseHistoryLine, planRows, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
 import { hasNumbers, type Overview } from '@/lib/overview';
 import { COLUMN, PacePill } from '@/components/ui';
@@ -94,7 +94,7 @@ export default async function CoachPage({ searchParams }: Props) {
             </div>
             {stats.current && (
               <p className="mt-4 text-sm text-ink-muted">
-                Up next in the player: <span className="text-ink">§{String(stats.current.sectionNumber).padStart(2, '0')} · lecture {stats.current.lectureNumber} — {stats.current.title}</span>
+                Up next in the player: <span className="text-ink">{sectionTag(stats.current.sectionNumber)} · lecture {stats.current.lectureNumber} — {stats.current.title}</span>
               </p>
             )}
             <div className="mt-10">

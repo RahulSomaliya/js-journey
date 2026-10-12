@@ -85,7 +85,7 @@ export function planRows(o: Pick<Overview, 'sections' | 'logs' | 'config' | 'sta
         rows.push({ kind: 'break', label: b.label, start: b.start, end: b.end, now: b.start <= today && today <= b.end });
       }
     }
-    // A section longer than a week (React §29 = 7.9 h) leaves the next week's milestone on the SAME
+    // A section longer than a week (React 29 = 7.9 h) leaves the next week's milestone on the SAME
     // section: that week is about the next one — "Keep going", and never "behind" mid-section.
     const repeat = m.throughSectionId === prevThrough;
     const next = repeat ? core.find((c) => c.sortOrder > through.sortOrder) : undefined;
@@ -205,7 +205,7 @@ export function replyContext(update: Pick<StudentUpdate, 'studyDate' | 'note'>, 
   return { lead, quote: update.note === null || update.note.trim() === '' ? null : snippet(update.note) };
 }
 
-/** "1h 15m · §10 Thinking in React… · 3 lectures"; minutes 0 = a note-only update. */
+/** "1h 15m · 10 Thinking in React… · 3 lectures"; minutes 0 = a note-only update. */
 export function updateFacts(u: Pick<StudentUpdate, 'minutes' | 'sectionNumber' | 'sectionTitle' | 'lectures'>): string[] {
   const facts = [u.minutes > 0 ? fmtDur(u.minutes) : 'Note only'];
   if (u.sectionNumber !== null) facts.push(`${sectionTag(u.sectionNumber)}${u.sectionTitle ? ` ${u.sectionTitle}` : ''}`);

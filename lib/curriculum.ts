@@ -38,7 +38,7 @@ export const REACT_SECTION_ID_OFFSET = 100;
 // [folder number, folder title without "NN ", exact video seconds] — from
 // course-player/docs/react-2023-section-durations.json (mp4 header durations, 2026-10-01).
 // "(Optional)" stays in the title as information only: every section counts toward
-// the plan except §04 (JS review — she just finished the JS course). Rahul's call.
+// the plan except 04 (JS review — she just finished the JS course). Rahul's call.
 const REACT_SECTIONS: ReadonlyArray<readonly [number, string, number]> = [
   [1, 'Welcome, Welcome, Welcome!', 1849.588],
   [2, 'Part 1 - React Fundamentals (4 Projects)', 55.589],

@@ -123,7 +123,7 @@ function snapshotCompletion(s: ProgressSnapshot): Omit<JourneyStats['complete'],
   return { percent, lecturesDone: s.lecturesDone, lecturesTotal: s.lecturesTotal };
 }
 
-// every section counts toward the total (the player's total is the whole course, §04 too)
+// every section counts toward the total (the player's total is the whole course, 04 too)
 function sessionCompletion(logs: LogEntry[], sections: Section[]): Omit<JourneyStats['complete'], 'label'> {
   const done = finishedSectionIds(logs); // sectionsFinishedBy: mid-session finishes count
   const total = sections.reduce((sum, s) => sum + s.videoMinutes, 0);

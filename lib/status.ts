@@ -9,11 +9,11 @@ import { STUDY_WEEKDAYS } from '@/lib/date';
 // lib/journey-view.ts weekView: /m "This week", /r header), so all three read the same:
 // - pace + daysDelta = planPace: ONE model, the weekly goals ("Ahead by 2 days" / "On track" /
 //              "Behind by 3 days" in the pill, the same in the Due stat) — see planPace for the trap
-// - goal     = this plan week's goal (planGoal) — "Finish §12 … by Fri 23 Oct"
+// - goal     = this plan week's goal (planGoal) — "Finish 12 … by Fri 23 Oct"
 // - sectionDue = every counted section's plan-week Friday (sectionDueDates)
 // - planBreak = planBreakFor: the break in progress, else the next within 14 days
 //              (all three show the same break; every number above already skips it)
-// - skippedSections = sections the plan skips (kind 'skip': React §04)
+// - skippedSections = sections the plan skips (kind 'skip': React 04)
 // - studyWeekdays + planBreaks = the plan calendar (Mon–Fri, EVERY break) the streak walks — the player's
 //              (web/src/lib/stats.ts) and lib/stats.ts here, from this one status, so both read one number
 // Pure: the route handler only loads the rows and the clock.
@@ -99,7 +99,7 @@ export function sectionDueDates(sections: Section[], milestones: WeeklyMilestone
   return out;
 }
 
-// The goal "This week" shows: the current plan week's milestone ("finish §12 by Fri 23 Oct").
+// The goal "This week" shows: the current plan week's milestone ("finish 12 by Fri 23 Oct").
 // Once she has finished everything it asks for (she is ahead), the next unmet week's goal
 // takes its place, so the goal is never one she already met; null when the course is done.
 // Its due date is sectionDue of the same section — the player shows both on one screen,

@@ -210,7 +210,7 @@ describe('GET /api/player/status', () => {
     expect(body.plan).toEqual(planRows({ sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, status, today }));
     // the contract shape, pinned (course-player shared/types.ts PlanRow mirrors it)
     expect(body.plan).toHaveLength(11); // 10 study weeks + the Diwali break
-    expect(body.plan[0]).toEqual({ kind: 'week', week: 1, due: '2026-10-09', goal: 'Finish §05 Working With Components, Props, and JSX', state: 'current' });
+    expect(body.plan[0]).toEqual({ kind: 'week', week: 1, due: '2026-10-09', goal: 'Finish 05 Working With Components, Props, and JSX', state: 'current' });
     expect(body.plan[1]).toMatchObject({ kind: 'week', week: 2, state: 'upcoming' });
     expect(body.plan[4]).toEqual({ kind: 'break', label: 'Diwali', start: '2026-11-01', end: '2026-11-15', now: false });
     // no extra read for it: the plan is built from the rows the status already loaded

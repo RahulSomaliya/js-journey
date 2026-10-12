@@ -3,6 +3,7 @@ import { REACT_PLAN } from '@/lib/config';
 import { ACTIVE_COURSE, noteCourse, type CourseId } from '@/lib/courses';
 import { finishedSectionIds, type LogEntry } from '@/lib/schedule';
 import { buildOverview, type Overview } from '@/lib/overview';
+import { sectionTag } from '@/lib/format';
 import { assembleFeed, assemblePage, type FeedUpdate, type MessageRow, type UpdateRow } from '@/lib/feed';
 import type { CoachMessage, JourneyFeed, ProgressSnapshot } from '@/lib/player';
 
@@ -14,7 +15,7 @@ import type { CoachMessage, JourneyFeed, ProgressSnapshot } from '@/lib/player';
 //   typical — Wed 21 Oct (week 3), on track; 2 unread updates for Rahul (one stuck, one
 //             auto-closed), 1 unread reply + 1 unread note for her, a long note, a note-only day
 //   behind  — same day, but she stopped after Thu 8 Oct: behind, streak 0
-//   diwali  — Wed 4 Nov, mid-break, on plan through §16
+//   diwali  — Wed 4 Nov, mid-break, on plan through 16
 //   empty   — Sat 3 Oct, before the plan starts: nothing at all (empty states)
 // Every scenario also has Rahul's notes from the finished JS course (JS_ERA_NOTES) — the JS history is
 // the same whatever React's state; they never reach a React list (v3, lib/courses.ts noteWindow).
@@ -72,7 +73,7 @@ function diwaliDays(): Day[] {
   ];
   return [
     ...TYPICAL_DAYS.map((d) => ({ ...d, stuck: false })),
-    ...extra.map(([date, n]): Day => ({ date, at: '20:00', minutes: 150, section: n, finished: [n], mood: '🙂', note: `Finished §${n}.`, lectures: 12 })),
+    ...extra.map(([date, n]): Day => ({ date, at: '20:00', minutes: 150, section: n, finished: [n], mood: '🙂', note: `Finished ${sectionTag(n)}.`, lectures: 12 })),
   ];
 }
 

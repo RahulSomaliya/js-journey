@@ -13,9 +13,9 @@ describe('fmtDur', () => {
 });
 
 describe('sectionTag', () => {
-  it('formats a course section number as §NN', () => {
-    expect(sectionTag(7)).toBe('§07');
-    expect(sectionTag(31)).toBe('§31');
+  it('formats a course section number as two digits — never "§" (Rahul, 2026-10-12)', () => {
+    expect(sectionTag(7)).toBe('07');
+    expect(sectionTag(31)).toBe('31');
   });
 });
 

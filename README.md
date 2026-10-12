@@ -16,7 +16,7 @@ now his *Ultimate React Course* (2023) — and lets her coach (Rahul) review it 
 | `js` — Complete JavaScript (finished) | Mon 22 Jun 2026 | 2.5 h/day × 5 | 2.5× | Fri 25 Sep | Fri 2 Oct |
 | `react-2023` — Ultimate React (active) | Mon 5 Oct 2026 | 2.5 h/day × 5 | 1.75× | Fri 25 Dec | Fri 1 Jan 2027 |
 
-React: 30 counted sections (every folder except §04 *Review of Essential JavaScript*) = 3916 video-min (65.3 h) → 114.2 study-hours → 10 study weeks + 1 grace week.
+React: 30 counted sections (every folder except 04 *Review of Essential JavaScript*) = 3916 video-min (65.3 h) → 114.2 study-hours → 10 study weeks + 1 grace week.
 Plan breaks (`ScheduleConfig.breaks`) are days with no study: **Diwali, Sun 1 – Sun 15 Nov 2026** (10 study days) moves the
 target and deadline two weeks later (from Fri 11 / Fri 18 Dec). Pace, due dates and the daily no-log email skip break
 days (the streak is the player's: calendar days with ≥ 5 min, so a break ends it — same number in both apps). Constants: `lib/config.ts`; curricula: `lib/curriculum.ts`; pinned in `tests/courses.test.ts`.

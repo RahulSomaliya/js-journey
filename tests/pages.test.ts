@@ -138,7 +138,7 @@ describe('/m — her view', () => {
     state.q = { scenario: 'behind', extraUnread: 0 };
     // /r: up to the plan list, whose per-week "Behind" is a week's status (week 2 missed), not the pace
     for (const t of [await student(), (await coach()).split(' Plan ')[0]]) {
-      expect(t.match(/Behind by 5 days/g)?.length).toBe(2); // the pill + the Due stat
+      expect(t.match(/Behind by 6 days/g)?.length).toBe(2); // the pill + the Due stat
       expect(t).not.toMatch(/\bBehind\b(?! by \d| the Scenes)/);
     }
   });

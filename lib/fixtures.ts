@@ -2,8 +2,9 @@ import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
 import { ACTIVE_COURSE, noteCourse, type CourseId } from '@/lib/courses';
 import { finishedSectionIds, type LogEntry } from '@/lib/schedule';
-import { buildOverview, type Overview } from '@/lib/overview';
+import { outlineFor } from '@/lib/outline';
 import { sectionTag } from '@/lib/format';
+import { buildOverview, type Overview } from '@/lib/overview';
 import { assembleFeed, assemblePage, type FeedUpdate, type MessageRow, type UpdateRow } from '@/lib/feed';
 import type { CoachMessage, JourneyFeed, ProgressSnapshot } from '@/lib/player';
 
@@ -12,7 +13,8 @@ import type { CoachMessage, JourneyFeed, ProgressSnapshot } from '@/lib/player';
 // Built through the real pure code (buildOverview, assemblePage), so a fixture cannot drift
 // from what production returns. Never imported by production code paths.
 //
-//   typical — Wed 21 Oct (week 3), on track; 2 unread updates for Rahul (one stuck, one
+//   typical — Wed 21 Oct (week 3), on track (10 finished tonight: her content is where the prorated
+//             plan expects it, lib/status.ts planPace); 2 unread updates for Rahul (one stuck, one
 //             auto-closed), 1 unread reply + 1 unread note for her, a long note, a note-only day
 //   behind  — same day, but she stopped after Thu 8 Oct: behind, streak 0
 //   diwali  — Wed 4 Nov, mid-break, on plan through 16
@@ -64,7 +66,7 @@ const TYPICAL_DAYS: Day[] = [
   { date: '2026-10-19', at: '20:20', minutes: 140, section: 8, mood: '🙂', note: 'Eat-N-Split: built the friends list without looking at the solution first.', lectures: 6 },
   { date: '2026-10-20', at: '21:10', minutes: 100, section: 8, finished: [8, 9], mood: '😄', note: 'Split-bill form works. Part 2 starts tomorrow!', lectures: 5 },
   { date: '2026-10-21', at: '17:45', minutes: 40, section: 10, autoClosed: true, lectures: 2 },
-  { date: '2026-10-21', at: '18:55', minutes: 75, section: 10, stuck: true, mood: '😩', note: LONG_NOTE, lectures: 3 },
+  { date: '2026-10-21', at: '18:55', minutes: 75, section: 10, finished: [10], stuck: true, mood: '😩', note: LONG_NOTE, lectures: 3 },
 ];
 
 function diwaliDays(): Day[] {
@@ -147,27 +149,45 @@ export function fixtureNotes(s: Scenario, course: CourseId = ACTIVE_COURSE): Coa
   return [...react, ...JS_ERA_NOTES].filter((n) => noteCourse(n.createdAt) === course);
 }
 
-/** The player's latest snapshot for the scenario (null for empty — the stats fall back to sessions). */
+/** The player's latest snapshot for the scenario (null for empty — the stats fall back to sessions): every
+ *  lecture of the sections her sessions finished, plus the first CURRENT_LECTURE − 1 of the next one (the
+ *  player's "Continue" points at lecture CURRENT_LECTURE) — lecture numbers, kinds and seconds from the
+ *  React outline, so doneLectures, videoSecondsDone and the coach page's lecture view agree. */
+const CURRENT_LECTURE = 4;
 export function fixtureSnapshot(s: Scenario): ProgressSnapshot | null {
   const logs = rowsFor(s).map((x) => x.log);
   if (logs.length === 0) return null;
+  const outline = outlineFor('react-2023');
+  if (!outline) throw new Error('fixture: the React outline is missing');
   const done = finishedSectionIds(logs);
-  const totalSeconds = REACT_CURRICULUM.reduce((sum, x) => sum + x.videoMinutes * 60, 0);
-  const doneSeconds = REACT_CURRICULUM.filter((x) => done.has(x.id)).reduce((sum, x) => sum + x.videoMinutes * 60, 0);
+  const doneNumbers = REACT_CURRICULUM.filter((x) => done.has(x.id)).map((x) => x.sortOrder);
+  const current = REACT_CURRICULUM.find((x) => x.kind === 'core' && !done.has(x.id));
+  const doneLectures: Record<string, number[]> = {};
+  let lecturesDone = 0;
+  let doneSeconds = 0;
+  for (const sec of outline.sections) {
+    const ticked = doneNumbers.includes(sec.number) ? sec.lectures
+      : sec.number === current?.sortOrder ? sec.lectures.filter((l) => l.number < CURRENT_LECTURE) : [];
+    if (ticked.length === 0) continue;
+    doneLectures[String(sec.number)] = ticked.map((l) => l.number);
+    lecturesDone += ticked.length;
+    doneSeconds += ticked.reduce((sum, l) => sum + l.seconds, 0);
+  }
   const days: Record<string, number> = {};
   for (const l of logs) days[l.studyDate] = (days[l.studyDate] ?? 0) + l.minutes * 60 + (l.minutes ? 37 : 0);
   const last = logs[logs.length - 1];
-  const current = REACT_CURRICULUM.find((x) => x.kind === 'core' && !done.has(x.id));
+  const continueAt = current ? outline.sections.find((x) => x.number === current.sortOrder)?.lectures[CURRENT_LECTURE - 1] : undefined;
   return {
     course: 'react-2023',
     takenAt: Date.parse(last.createdAt ?? '') + 60_000,
-    lecturesDone: Math.round((doneSeconds / totalSeconds) * 410) + 3,
-    lecturesTotal: 410,
-    videoSecondsDone: doneSeconds + 900,
-    videoSecondsTotal: totalSeconds,
-    sectionsDone: REACT_CURRICULUM.filter((x) => done.has(x.id)).map((x) => x.sortOrder),
-    current: current ? { sectionNumber: current.sortOrder, lectureNumber: 4, title: 'Component Composition and Prop Drilling' } : null,
+    lecturesDone,
+    lecturesTotal: outline.sections.reduce((n, x) => n + x.lectures.length, 0),
+    videoSecondsDone: doneSeconds,
+    videoSecondsTotal: outline.sections.reduce((sum, x) => sum + x.lectures.reduce((t, l) => t + l.seconds, 0), 0),
+    sectionsDone: doneNumbers,
+    current: current && continueAt ? { sectionNumber: current.sortOrder, lectureNumber: continueAt.number, title: continueAt.title } : null,
     days,
+    doneLectures,
   };
 }
 

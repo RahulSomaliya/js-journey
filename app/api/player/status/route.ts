@@ -1,6 +1,6 @@
 import { roleFromBearer } from '@/lib/auth';
 import { isCourseId, getCourse } from '@/lib/courses';
-import { getSections, getLogs, latestCoachNote } from '@/lib/db/queries';
+import { getSections, getLogs, latestCoachNote, getProgressSnapshot } from '@/lib/db/queries';
 import { computeJourneyStatus } from '@/lib/status';
 import { planRows } from '@/lib/journey-view';
 import type { JourneyStatus } from '@/lib/player';
@@ -9,7 +9,7 @@ import { TIME_ZONE } from '@/lib/config';
 import { apiJson } from '@/lib/api';
 
 // GET /api/player/status?course=react-2023 → JourneyStatus (lib/player.ts), for the
-// Course Player's header chip, This week and (v3) her full plan. Bearer student token, like POST /sessions. The player
+// Course Player's header chip, This week, (v3) her full plan and (v4) the projection + daily goal. Bearer student token, like POST /sessions. The player
 // also calls this once to validate her link when it is first connected.
 // force-dynamic + no-store: must never be prerendered at build or served from a cache.
 export const dynamic = 'force-dynamic';
@@ -32,17 +32,20 @@ export async function GET(req: Request): Promise<Response> {
   let sections: Awaited<ReturnType<typeof getSections>>;
   let logs: Awaited<ReturnType<typeof getLogs>>;
   let note: Awaited<ReturnType<typeof latestCoachNote>>;
+  let snapshot: Awaited<ReturnType<typeof getProgressSnapshot>>;
   try {
-    [sections, logs, note] = await Promise.all([getSections(course), getLogs(course), latestCoachNote(course)]);
+    // v4: the pace + projection read her latest snapshot — in the SAME parallel read (no extra round trip).
+    // Without it the status falls back to the logs-only pace: "Behind by 3 days" for a student 2 days ahead.
+    [sections, logs, note, snapshot] = await Promise.all([getSections(course), getLogs(course), latestCoachNote(course), getProgressSnapshot(course)]);
   } catch (e) {
     console.error(`[player] status for ${course} failed`, e);
     return apiJson({ error: 'could not read status right now; retry later' }, 500);
   }
   const today = todayInTZ(TIME_ZONE);
   const config = getCourse(course).plan;
-  const status = computeJourneyStatus({ today, sections, logs, config, coachNote: note });
+  const status = computeJourneyStatus({ today, sections, logs, config, coachNote: note, snapshot });
   // v3 `plan`: her full plan (the player's "See full plan") = the coach page's plan list, from the rows
   // already loaded — no extra read.
-  const body: JourneyStatus = { ...status, plan: planRows({ sections, logs, config, status, today }) };
+  const body: JourneyStatus = { ...status, plan: planRows({ sections, logs, config, status, today, snapshot }) };
   return apiJson(body, 200);
 }

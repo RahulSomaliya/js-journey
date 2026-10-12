@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { fixtureFeed, fixtureOverview, fixtureUpdates } from '@/lib/fixtures';
 import {
-  caughtUp, greeting, moodLabel, paceLabel, planRows, replyContext, snippet, unreadFromRahul, updateFacts, updateWhen, weekView, withNotes, type PlanRow,
+  caughtUp, greeting, moodLabel, paceLabel, planRows, projectionLine, replyContext, snippet, unreadFromRahul, updateFacts, updateWhen, weekView, withNotes, type PlanRow,
 } from '@/lib/journey-view';
 import { REACT_PLAN } from '@/lib/config';
-import type { JourneyStatus } from '@/lib/player';
+import { REACT_CURRICULUM } from '@/lib/curriculum';
+import { computeJourneyStatus } from '@/lib/status';
+import type { JourneyStatus, Projection } from '@/lib/player';
+import { WEEK1_LOGS, WEEK1_SNAPSHOT } from './helpers';
 
 // What the two v2 pages print, as pure functions over the data layer's shapes (lib/fixtures.ts
 // scenarios). "This week" and the pace pill MIRROR the Course Player (web/src/lib/week.ts), so
@@ -23,7 +26,8 @@ describe('paceLabel (course-player lib/week.ts paceOf)', () => {
   });
   it('the fixtures: typical (week 3, weeks 1–2 met) is On track; behind (stopped Thu 8 Oct) says by how much', () => {
     expect(paceLabel(fixtureOverview('typical').status).label).toBe('On track');
-    expect(paceLabel(fixtureOverview('behind').status).label).toBe('Behind by 5 days');
+    // v4 content pace: 01–05 + 3 lectures of 06 ≈ 295 min vs Wed of week 3's 708 + 510 × 2/5 = 912 → −617 ÷ 102 = −6
+    expect(paceLabel(fixtureOverview('behind').status).label).toBe('Behind by 6 days');
   });
 });
 
@@ -189,5 +193,56 @@ describe('updateWhen / greeting (IST)', () => {
     expect(greeting(new Date('2026-10-21T08:30:00.000Z'))).toBe('Good afternoon'); // 14:00 IST
     expect(greeting(new Date('2026-10-21T13:30:00.000Z'))).toBe('Good evening'); // 19:00 IST
     expect(greeting(new Date('2026-10-20T20:00:00.000Z'))).toBe('Hi'); // 01:30 IST — she should be asleep
+  });
+});
+
+describe('planRows v4 — "finished" = her snapshot ∪ the logs; "Behind" only when the pace is behind', () => {
+  const overview = (today: string, snapshot = WEEK1_SNAPSHOT, logs = WEEK1_LOGS) => {
+    const base = { sections: REACT_CURRICULUM, logs, config: REACT_PLAN, today, snapshot };
+    return { ...base, status: computeJourneyStatus({ ...base, coachNote: null }) };
+  };
+  it('today\'s case (Mon 12 Oct): week 1 is not "Behind" — she is 2 days ahead, 01 just has an unticked article', () => {
+    // logs alone said week 1 Behind; 01 is still open (one article), so it is not ✓ either: a quiet past week
+    expect(brief(planRows(overview('2026-10-12'))).slice(0, 3)).toEqual(['1:past', '2:current', '3:upcoming']);
+  });
+  it('the snapshot finishing a section counts: 01 done in the snapshot (never in a log) → week 1 ✓', () => {
+    const snap = { ...WEEK1_SNAPSHOT, sectionsDone: [1, 2, 3, 5, 6], doneLectures: { ...WEEK1_SNAPSHOT.doneLectures, '1': [1, 2, 3, 4, 5] } };
+    expect(brief(planRows(overview('2026-10-12', snap))).slice(0, 2)).toEqual(['1:done', '2:current']);
+  });
+  it('a missed week still reads Behind when the pace is behind (Sat 17 Oct, nothing added since Friday 9)', () => {
+    expect(brief(planRows(overview('2026-10-17'))).slice(0, 3)).toEqual(['1:past', '2:behind', '3:upcoming']);
+  });
+});
+
+// "At your pace — about 1h 25m of lectures a study day — you'll finish around Fri 27 Nov, 4 weeks before your
+// target." (spec-v4 "Projection"). SAME TABLE as the course player's formatter — change both together.
+const P = (vsTarget: number, minutesPerStudyDay = 85, finish = '2026-11-27'): Projection => ({ finish, studyDaysLeft: 30, minutesPerStudyDay, vsTarget });
+const PROJECTION_CASES: { name: string; p: Projection; who: 'you' | 'her'; want: string }[] = [
+  { name: 'weeks before (you)', p: P(20), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 4 weeks before your target.' },
+  { name: 'weeks before (her)', p: P(20), who: 'her', want: 'At her pace — about 1h 25m of lectures a study day — she’ll finish around Fri 27 Nov, 4 weeks before her target.' },
+  { name: 'on the target', p: P(0), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, right around your target.' },
+  { name: '2 days early is "right around"', p: P(2), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, right around your target.' },
+  { name: '2 days late is "right around"', p: P(-2), who: 'her', want: 'At her pace — about 1h 25m of lectures a study day — she’ll finish around Fri 27 Nov, right around her target.' },
+  { name: '3 days before', p: P(3), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 3 days before your target.' },
+  { name: '4 days after', p: P(-4), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 4 days after your target.' },
+  { name: '5 study days = 1 week after', p: P(-5), who: 'her', want: 'At her pace — about 1h 25m of lectures a study day — she’ll finish around Fri 27 Nov, 1 week after her target.' },
+  { name: '7 study days rounds to 1 week', p: P(7, 91, '2026-12-16'), who: 'her', want: 'At her pace — about 1h 31m of lectures a study day — she’ll finish around Wed 16 Dec, 1 week before her target.' },
+  { name: '12 study days rounds to 2 weeks', p: P(-12), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 2 weeks after your target.' },
+  { name: '13 study days rounds to 3 weeks', p: P(13), who: 'you', want: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around Fri 27 Nov, 3 weeks before your target.' },
+  { name: 'under an hour a day', p: P(20, 45), who: 'you', want: 'At your pace — about 45m of lectures a study day — you’ll finish around Fri 27 Nov, 4 weeks before your target.' },
+  { name: 'a whole hour', p: P(20, 60), who: 'you', want: 'At your pace — about 1h of lectures a study day — you’ll finish around Fri 27 Nov, 4 weeks before your target.' },
+];
+
+describe('projectionLine — her finish at her current pace, in words', () => {
+  it.each(PROJECTION_CASES)('$name', ({ p, who, want }) => {
+    const l = projectionLine(p, who);
+    expect(l.lead + l.date + l.tail).toBe(want);
+  });
+  it('splits around the date, so a page can set it in bold', () => {
+    expect(projectionLine(P(20), 'you')).toEqual({
+      lead: 'At your pace — about 1h 25m of lectures a study day — you’ll finish around ',
+      date: 'Fri 27 Nov',
+      tail: ', 4 weeks before your target.',
+    });
   });
 });

@@ -9,8 +9,9 @@ import type { ProgressSnapshot } from '@/lib/player';
 // The coach view shows "the same stats she sees" (spec-v2 decision 7): these mirror the
 // Course Player's home row (course-player web/src/lib/stats.ts + screens/home/Stats.tsx).
 const at = (iso: string) => new Date(iso);
+// the status here is the logs-only one: these tests are about the stats row, not the pace model
 const statusOn = (today: string, logs: LogEntry[] = []) =>
-  computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote: null });
+  computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs, config: REACT_PLAN, coachNote: null, snapshot: null });
 const SNAP: ProgressSnapshot = {
   course: 'react-2023',
   takenAt: Date.parse('2026-10-07T09:55:00.000Z'),

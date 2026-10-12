@@ -3,7 +3,7 @@ import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
 import { computeJourneyStatus } from '@/lib/status';
 import { planRows } from '@/lib/journey-view';
-import { REACT_SECTION_DUE } from './helpers';
+import { REACT_SECTION_DUE, WEEK1_LOGS, WEEK1_SNAPSHOT } from './helpers';
 
 // The route handlers are thin: auth → validate → query. The DB and the
 // after-response side effects (email, revalidation) are mocked here.
@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   getSections: vi.fn(),
   getLogs: vi.fn(),
   latestCoachNote: vi.fn(),
+  getProgressSnapshot: vi.fn(),
   afterLogWritten: vi.fn(),
 }));
 vi.mock('@/lib/db/queries', () => ({
@@ -19,6 +20,7 @@ vi.mock('@/lib/db/queries', () => ({
   getSections: m.getSections,
   getLogs: m.getLogs,
   latestCoachNote: m.latestCoachNote,
+  getProgressSnapshot: m.getProgressSnapshot,
 }));
 vi.mock('@/lib/notify', () => ({ afterLogWritten: m.afterLogWritten }));
 
@@ -58,6 +60,7 @@ beforeEach(() => {
   process.env.STUDENT_TOKEN = 'stu-secret';
   process.env.COACH_TOKEN = 'coach-secret';
   vi.clearAllMocks();
+  m.getProgressSnapshot.mockResolvedValue(null); // no player snapshot yet unless a test says so
 });
 
 describe('POST /api/player/sessions', () => {
@@ -183,6 +186,7 @@ describe('GET /api/player/status', () => {
     expect(m.getSections).toHaveBeenCalledWith('react-2023');
     expect(m.getLogs).toHaveBeenCalledWith('react-2023');
     expect(m.latestCoachNote).toHaveBeenCalledWith('react-2023'); // v3: the note of the course's era
+    expect(m.getProgressSnapshot).toHaveBeenCalledWith('react-2023'); // v4: the pace reads her latest snapshot
     expect(await res.json()).toEqual({
       pace: 'on-track',
       daysDelta: 0,
@@ -198,7 +202,24 @@ describe('GET /api/player/status', () => {
       studyWeekdays: [1, 2, 3, 4, 5],
       planBreaks: [{ label: 'Diwali', start: '2026-11-01', end: '2026-11-15' }],
       plan: expect.any(Array),
+      startDate: '2026-10-05',
+      dailyGoalMinutes: 150,
+      projection: null, // no snapshot yet
     });
+  });
+  it('v4 today\'s case (Mon 12 Oct): her snapshot makes the pace — Ahead by 2 days, with the projection', async () => {
+    vi.setSystemTime(new Date('2026-10-12T03:30:00.000Z')); // Mon 12 Oct, 09:00 IST
+    m.getSections.mockResolvedValue(REACT_CURRICULUM);
+    m.getLogs.mockResolvedValue(WEEK1_LOGS);
+    m.latestCoachNote.mockResolvedValue(null);
+    m.getProgressSnapshot.mockResolvedValue(WEEK1_SNAPSHOT);
+    const body = await (await get('?course=react-2023')).json();
+    expect([body.pace, body.daysDelta]).toEqual(['ahead', 2]);
+    expect(body.goal).toEqual({ sectionNumber: 9, title: 'Part 2 - Intermediate React (2 Projects)', due: '2026-10-16' });
+    expect(body.projection).toEqual({ finish: '2026-12-16', studyDaysLeft: 38, minutesPerStudyDay: 91, vsTarget: 7 });
+    expect(body.plan.slice(0, 2).map((r: { state: string }) => r.state)).toEqual(['past', 'current']); // never "Behind"
+    // one parallel read: sections, logs, the note and the snapshot — nothing after it
+    for (const q of [m.getSections, m.getLogs, m.latestCoachNote, m.getProgressSnapshot]) expect(q).toHaveBeenCalledTimes(1);
   });
   it('v3: carries her plan — exactly the coach page\'s plan rows (planRows), the break in place', async () => {
     m.getSections.mockResolvedValue(REACT_CURRICULUM);
@@ -206,8 +227,8 @@ describe('GET /api/player/status', () => {
     m.latestCoachNote.mockResolvedValue(null);
     const body = await (await get('?course=react-2023')).json();
     const today = '2026-10-01';
-    const status = computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null });
-    expect(body.plan).toEqual(planRows({ sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, status, today }));
+    const status = computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null, snapshot: null });
+    expect(body.plan).toEqual(planRows({ sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, status, today, snapshot: null }));
     // the contract shape, pinned (course-player shared/types.ts PlanRow mirrors it)
     expect(body.plan).toHaveLength(11); // 10 study weeks + the Diwali break
     expect(body.plan[0]).toEqual({ kind: 'week', week: 1, due: '2026-10-09', goal: 'Finish 05 Working With Components, Props, and JSX', state: 'current' });

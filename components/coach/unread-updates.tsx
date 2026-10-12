@@ -6,7 +6,7 @@ import { plural } from '@/lib/format';
 import { CheckIcon, SectionHeading } from '@/components/ui';
 import { Replies, UpdateMeta } from '@/components/update-item';
 import { ReplyForm, type ReplyOutcome } from './reply-form';
-import { NOTE_FIELD_ID } from './note-composer';
+import { NOTE_FIELD_ID, OPEN_NOTE_EVENT } from './note-composer';
 
 // The top of /r: every update Rahul has not read, newest first, each with its own reply box.
 // A card leaves as soon as its reply / "Mark read" succeeds (the server re-render then lists it in
@@ -49,11 +49,9 @@ export function UnreadUpdates({ updates, today, quiet, more }: {
             <a
               href={`#${NOTE_FIELD_ID}`}
               onClick={(e) => {
-                // a fragment link scrolls but never focuses a textarea — put the cursor in it
-                const field = document.getElementById(NOTE_FIELD_ID);
-                if (!field) return;
+                // the note box is folded until opened (v4): ask the composer to open and focus it
                 e.preventDefault();
-                field.focus();
+                window.dispatchEvent(new Event(OPEN_NOTE_EVENT));
               }}
               className="rounded-sm font-medium text-accent-ink underline-offset-4 hover:underline"
             >

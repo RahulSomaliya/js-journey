@@ -50,6 +50,7 @@ const TEXT_ON: [string, string[]][] = [
   ['ink-muted', ['canvas', 'surface', 'fill', 'raised']],
   ['ink-subtle', ['canvas', 'surface', 'fill']], // "subtle" is still text: AA on fill too (design.md trap)
   ['accent-ink', ['canvas', 'surface', 'accent-soft']],
+  ['success-ink', ['canvas', 'surface', 'success-soft']], // the pace pill when she is ahead / on track (2026-10-12)
   ['on-accent', ['accent', 'accent-hover']],
 ];
 const THEMES = [['light', ':root'], ['dark', ":root[data-theme='dark']"]] as const;

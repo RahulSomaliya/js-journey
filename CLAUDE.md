@@ -114,3 +114,8 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
 - Clock times are 12 h ("6:55 pm"), only via `lib/format.ts` `fmtTime`/`fmtWhen` (= the player's `formatTimeOfDay`) —
   Rahul: never 24 h (2026-10-05). The am/pm is hand-built from Intl's numeric IST hour: Intl's own day-period text
   differs between Node's ICU and her browser's, which would break hydration in a client component.
+- Verify a prod deploy from the commit's GitHub status, not by eye: `curl -s
+  https://api.github.com/repos/RahulSomaliya/js-journey/commits/<sha>/status` (Vercel posts success/failure there;
+  works when the Vercel MCP is disconnected and Chrome is not signed in to Vercel). 2026-10-12: fe2443c FAILED on
+  Vercel while a clean checkout of the same tree built fine here; an empty-commit redeploy (6a5056d) passed — the
+  old deploy stays live meanwhile, so a failed build never breaks her app, it just silently isn't shipped.

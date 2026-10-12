@@ -8,7 +8,7 @@
 
 ## Structure
 - `app/m/[token]` student view · `app/r/[token]` coach view (both: `?course=js` = the JS history) · `app/api/player/*` Course Player API · `app/api/cron/daily` missed-day email
-- `lib/` pure logic (schedule, status, player, feed, stats, overview, journey-view, courses, curriculum, format; `fixtures` = page test data) + `lib/db` (schema, queries; server-only) + `lib/actions` (server actions) + `lib/notify.ts` (after-write side effects)
+- `lib/` pure logic (schedule, status, player, feed, stats, overview, journey-view, courses, curriculum, format, outline + `outline/*.json`; `fixtures` = page test data) + `lib/db` (schema, queries; server-only) + `lib/actions` (server actions) + `lib/notify.ts` (after-write side effects)
 - `components/` shared (`ui` primitives + icons, `stats-row`, `thirty-days`, `update-item`, `course-history-header`, `theme-toggle`, `auto-textarea`) + `components/coach` (unread cards, reply, note, plan) + `components/student` (From Rahul, This week, sign-off) · `drizzle/` migrations · `scripts/seed.ts` · `tests/`
 
 ## Architecture map
@@ -16,14 +16,17 @@
 |---|---|
 | courses + plans | `lib/course-ids.ts` (ids = PG enum), `lib/courses.ts` (registry), `lib/config.ts` (plans) |
 | curricula / section ids | `lib/curriculum.ts` — JS 1..21, React 101..131 = 100 + folder number |
-| pace (the pill, Due stat, player status, coach email) | `lib/status.ts` `planPace` — the weekly goals (`computePace` only gives the email its "% done") |
-| dynamic schedule / finished sections | `lib/schedule.ts` (`buildDynamicSchedule` → `currentSection`, `sectionsFinishedBy`) |
+| pace (the pill, Due stat, player status, coach email) | `lib/status.ts` `planPace` — her lecture content (latest snapshot, `countedContent`) vs `planExpectedMinutes` (prorated to the start of today); no snapshot → `logsPace` (weekly goals). `computePace` only gives the email its "% done" |
+| her projection ("At your pace … you'll finish around …") | `lib/status.ts` `planProjection` → `JourneyStatus.projection`; words: `lib/journey-view.ts` `projectionLine(p, 'you' \| 'her')` (mirror of the player's, one test table) |
+| "is this section finished?" | `lib/schedule.ts` `doneSectionIds(sections, logs, snapshot?.sectionsDone)` — logs ∪ snapshot; `sectionsFinishedBy` per log row |
+| a plan week's sections / lectures (coach plan accordion) | `lib/schedule.ts` `planWeeks` (each week's span, shared with `planRows`); `lib/outline.ts` `outlineFor` + `weekOutline` (Part → section → lecture + her marks); data `lib/outline/react-2023.json` (generated from the SSD) |
+| 30-day average + daily goal | `lib/stats.ts` `studyAverage` (since `startDate`, study days only) + `goalMet` (`JourneyStatus.dailyGoalMinutes`) — mirrors of the player's |
 | plan breaks (Diwali) | `ScheduleConfig.breaks` in `lib/config.ts`; study-day math in `lib/date.ts`; `planBreakFor` / `nudgeSkipReason` in `lib/schedule.ts` |
 | player contract + validation | `lib/player.ts` (mirror of course-player `shared/types.ts`) |
 | her plan in the player (v3 "See full plan") | `GET /api/player/status` `plan` = `planRows` (`lib/journey-view.ts`, the coach page's Plan); type `PlanRow` in `lib/player.ts` |
 | which course a note of Rahul's belongs to | `lib/courses.ts` `notesFrom` / `noteWindow` / `noteCourse` (React from `REACT_NOTES_FROM`); SQL: `noteEra(course)` in `lib/db/queries.ts` |
 | a finished course's history (`?course=js`) | `/m` `courseHistory`, `/r` `jsHistory`: summary + her updates + that era's notes (`withNotes` + `before`), read-only |
-| player status numbers | `lib/status.ts` (`goal` = this plan week's goal, `sectionDue` = plan-week Fridays) |
+| player status numbers | `lib/status.ts` (`goal` = this plan week's goal, `sectionDue` = plan-week Fridays); the route reads the snapshot in the same `Promise.all` |
 | what a new log triggers | `lib/notify.ts` `afterLogWritten` (revalidate + coach email, stuck flagged) |
 | v2 updates feed / read state / replies | `lib/feed.ts` (cursor, page assembly) + `lib/db/queries.ts` (`listUpdates`, `getJourneyFeed`, `markUpdatesRead`, `markCoachMessagesRead`, `replyToUpdate`) |
 | stats she sees (Today/Streak/Complete/Due/30 days) | `lib/stats.ts` (mirror of course-player `web/src/lib/stats.ts`) from `progress_snapshots`; `lib/overview.ts` + `loadOverview` |
@@ -63,10 +66,21 @@ session id / course / date; server actions return `{ ok, error }`. Email failure
   together, or Rahul reads a different number than she does. The streak walks `JourneyStatus.studyWeekdays` +
   `planBreaks` (the calendar the player gets): a calendar-day streak reset every weekend and all of Diwali
   (2026-10-01). Never a second weekday list — `STUDY_WEEKDAYS` (`lib/date.ts`) feeds both `isStudyDay` and the status.
-- Pace = `lib/status.ts` `planPace` ONLY (the weekly goals): `pace` and `daysDelta` once came from two models
-  (prorated `computePace` + the dynamic projection) → a bare "Behind" on an on-plan week. Print it with
-  `paceLabel(daysDelta)` (pill AND Due stat — no separate word map); the player's `lib/week.ts` mirrors it.
-  The break's "back on" day is `weekView`'s `addDays(end, 1)` (= the player) — no second rule in `lib/stats.ts`.
+- Pace = `lib/status.ts` `planPace` ONLY: `pace` and `daysDelta` once came from two models (prorated `computePace` +
+  the dynamic projection) → a bare "Behind" on an on-plan week. Print it with `paceLabel(daysDelta)` (pill AND Due
+  stat — no separate word map); the player's `lib/week.ts` mirrors it. The break's "back on" day is `weekView`'s
+  `addDays(end, 1)` (= the player) — no second rule in `lib/stats.ts`.
+- "Finished" is NEVER the logs alone (2026-10-12): Monday of week 2 she was on 07 (06 done) and both apps said "Behind
+  by 3 days" — no session ever reported 01 (one article unticked), the pace counted only WHOLE sections in order, so
+  it credited nothing. Every "is it finished?" read is `doneSectionIds` (logs ∪ snapshot `sectionsDone`); the pace
+  counts lecture CONTENT from the snapshot (`doneLectures` + the outline), prorated to the START of today; a plan row
+  says "Behind" only when her content is short of that week's goal. `computeJourneyStatus`/`planPace` take the
+  snapshot as a REQUIRED arg (null = none yet): the status route, `buildOverview` and `lib/notify.ts` all load it —
+  a caller that forgets it prints the old reading. Pinned: `tests/status.test.ts` "today's case".
+- No "§" anywhere a person reads (Rahul, 2026-10-12): section numbers print as `sectionTag(n)` = "07", in both apps.
+- `lib/outline/react-2023.json` is GENERATED from the course folder on the SSD — regenerate, never hand-edit: its lecture
+  numbers must be the player's, or `doneLectures` ticks the wrong rows and the pace counts the wrong seconds.
+  `tests/outline.test.ts` pins 31 sections / 410 lectures and each section within a minute of `lib/curriculum.ts`.
 - `drizzle/0003_*.sql` has HAND-ADDED backfill UPDATEs + header: regenerating the file drops them — re-add both
   (`tests/migration-0003.test.ts` fails without them).
 - Dates in a client component must print the same in Node and in her browser: `fmtDate` uses fixed English names (Node's

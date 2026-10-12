@@ -30,22 +30,30 @@ paginated in SQL (keyset on `(created_at, id)`, one round trip with its replies)
 ### Shapes
 
 - **`Overview`** — `today` (IST `YYYY-MM-DD`), `status: JourneyStatus`, `stats: JourneyStats`, `currentSection`
-  (first unfinished counted section = "you're here", or null), plus `sections`, `logs`, `config` for the plan list
-  (`buildMilestones(sections, config)` in `lib/schedule.ts` = the weekly goals; `finishedSectionIds(logs)` = done).
+  (the section her snapshot's "Continue" is in, else the first unfinished counted section = "you're here", or null),
+  plus `sections`, `logs`, `config`, `snapshot` (her latest player snapshot or null) for the plan list
+  (`planRows(overview)`; `buildMilestones(sections, config)` in `lib/schedule.ts` = the weekly goals;
+  `doneSectionIds(sections, logs, snapshot?.sectionsDone)` = done — never the logs alone) and the plan accordion
+  (`weekOutline(overview, week, outlineFor(course))` in `lib/outline.ts`: Part → section → lecture with her marks).
 - **`JourneyStatus`** (same object the player gets) — `pace` (`ahead | on-track | behind`) + `daysDelta` (study days,
-  signed) from ONE model, the weekly goals (`lib/status.ts` `planPace`: behind = a past Friday's goal unmet), `week`,
+  signed) from ONE model (`lib/status.ts` `planPace`, v4: her lecture content from the latest snapshot vs the plan
+  prorated to the start of today, in this week's content per study day; |delta| < 1 = on track; no snapshot → the
+  logs-only weekly goals), `startDate`, `dailyGoalMinutes` (150), `projection` (`{ finish, studyDaysLeft,
+  minutesPerStudyDay, vsTarget }` or null — print it with `projectionLine(p, 'you' | 'her')`), `week`,
   `totalWeeks`, `targetDate`, `deadline`, `goal` (**this plan week's goal**: `{ sectionNumber, title, due }`, null
   when the course is done), `sectionDue` (`"7" → "2026-10-16"`, plan-week Friday; skipped sections have none),
   `skippedSections` (`[4]`), `planBreak` (current / next only), `coachNote`, `studyWeekdays` (`[1,2,3,4,5]`, ISO) +
   `planBreaks` (every break) — the calendar the streak walks; `plan` (v3, `GET /api/player/status` only: the coach page's
   `planRows` — the pages print `planRows(overview)` themselves).
 - **`JourneyStats`** (`lib/stats.ts`) — the player's row, mirrored:
-  - `today { date, seconds }` · `streak` (study days) · `complete { percent, label, lecturesDone, lecturesTotal }` —
+  - `today { date, seconds, met }` (`met` = at the daily goal) · `dailyGoalMinutes` · `streak` (study days) ·
+    `complete { percent, label, lecturesDone, lecturesTotal }` —
     print `label` (`"<1%"`, `"42%"`), never round `percent` yourself; `lecturesTotal` is null without a snapshot
   - `due { date, pace, daysDelta, onBreak }` — `pace` is null before the plan starts and during a break
     (`onBreak = { label }`); print the word with `paceLabel(due)` ("Behind by 3 days"), the day she is back with
     `weekView` (one "back on" rule)
-  - `last30 { days: { date, seconds }[30] (oldest → today), averageSeconds }`
+  - `last30 { days: { date, seconds, met }[30] (oldest → today), averageSeconds }` — the average is `studyAverage`:
+    her seconds since the plan's start ÷ its study days (today only with ≥ 5 min), never over all 30 days
   - `current` (the lecture "Continue" points at, or null) · `source` (`snapshot | sessions`) · `asOf` (ISO or null)
 - **`FeedUpdate`** (`lib/feed.ts`) = the contract's `StudentUpdate` + `logId` + `autoClosed`:
   `id` (player session id — **not** what actions take), `logId` (**pass this to coach actions**), `source`
@@ -80,15 +88,17 @@ Built through the real pure code (`buildOverview`, `assemblePage`), so they retu
 
 | Scenario | Now (IST) | What it exercises |
 |---|---|---|
-| `typical` | Wed 21 Oct 19:00 | week 3, on track; 2 unread updates for him (one **stuck** with a 539-char note, one **auto-closed**), a note-only manual day, threaded replies; 1 unread reply + 1 unread note for her |
-| `behind` | Wed 21 Oct | stopped after Thu 8 Oct: behind, streak 0, nothing unread |
-| `diwali` | Wed 4 Nov | on the break (`stats.due.onBreak`), on plan through §16 |
+| `typical` | Wed 21 Oct 19:00 | week 3, on track (10 finished tonight); 2 unread updates for him (one **stuck** with a 539-char note, one **auto-closed**), a note-only manual day, threaded replies; 1 unread reply + 1 unread note for her |
+| `behind` | Wed 21 Oct | stopped after Thu 8 Oct: Behind by 6 days, streak 0, nothing unread |
+| `diwali` | Wed 4 Nov | on the break (`stats.due.onBreak`), on plan through 16 |
 | `empty` | Sat 3 Oct | before the start: no updates, notes, snapshot (stats from sessions = zeros) |
 
 Every scenario also has three JS-era notes (`fixtureNotes(s, 'js')`; one she never saw) — no React list includes them.
 `fixtureOverview(s)` → `Overview` · `fixtureFeed(s, limit?)` → `JourneyFeed` (small `limit` = real `nextCursor`) ·
 `fixtureInbox(s, historyLimit?)` → `{ unread, unreadCount, history: { updates, nextCursor }, notes }` ·
-`fixtureUpdates(s)` → every `FeedUpdate` · `fixtureSnapshot(s)` · `FIXTURE_NOW[s]`. Pinned in `tests/fixtures.test.ts`.
+`fixtureUpdates(s)` → every `FeedUpdate` · `fixtureSnapshot(s)` (v4: `doneLectures` from the React outline — every lecture of
+the sections her sessions finished + lectures 1–3 of the next; "Continue" = its lecture 4) · `FIXTURE_NOW[s]`. Pinned in
+`tests/fixtures.test.ts`.
 
 ## Traps
 

@@ -23,10 +23,13 @@ const currentSectionOf = (o: WeekOutline | undefined): number[] => {
   return cur ? [cur.number] : [];
 };
 
-export function PlanList({ rows, meta, outlines }: { rows: PlanRow[]; meta: string; outlines: Outlines | null }) {
-  const currentWeek = rows.find((r): r is WeekRow => r.kind === 'week' && r.state === 'current')?.week ?? null;
-  const [openWeek, setOpenWeek] = useState<number | null>(outlines && currentWeek !== null ? currentWeek : null);
-  const [openSections, setOpenSections] = useState<ReadonlySet<number>>(() => new Set(currentWeek !== null ? currentSectionOf(outlines?.[currentWeek]) : []));
+/** Every week starts CLOSED (Rahul, 2026-10-12: he keeps the coach page short and opens the week he wants).
+ *  Opening a week opens the section holding "Continue" when it is in that week — read from the outline's
+ *  `current`, never from the row's state: a week she already met reads 'done', not 'current'.
+ *  `initialOpenWeek` is for tests (renderToString cannot click). */
+export function PlanList({ rows, meta, outlines, initialOpenWeek = null }: { rows: PlanRow[]; meta: string; outlines: Outlines | null; initialOpenWeek?: number | null }) {
+  const [openWeek, setOpenWeek] = useState<number | null>(outlines ? initialOpenWeek : null);
+  const [openSections, setOpenSections] = useState<ReadonlySet<number>>(() => new Set(initialOpenWeek !== null ? currentSectionOf(outlines?.[initialOpenWeek]) : []));
 
   function toggleWeek(week: number) {
     if (openWeek === week) {

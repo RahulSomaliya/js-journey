@@ -28,6 +28,7 @@ import CoachPage, { generateMetadata } from '@/app/r/[token]/page';
 import StudentPage from '@/app/m/[token]/page';
 import { StatsRow } from '@/components/stats-row';
 import { NoteComposer } from '@/components/coach/note-composer';
+import { PlanList } from '@/components/coach/plan-list';
 import { FromRahul } from '@/components/student/from-rahul';
 import { fixtureInbox, fixtureFeed, fixtureOverview } from '@/lib/fixtures';
 import { unreadFromRahul } from '@/lib/journey-view';
@@ -124,18 +125,29 @@ describe('/r — the coach view', () => {
 
 // v4 coach page (docs/spec-v4-pace-and-coach.md in course-player, "Coach page" + "Chart + daily goal").
 describe('/r — v4: plan accordion, history by day, folded note, projection, goal met', () => {
-  it('the plan: every week is a button, exactly one is open (this week), its Part → section → lecture view is there', async () => {
+  // Rahul (2026-10-12) asked for weeks he can expand — the page opens with every week CLOSED (he keeps the
+  // coach page short); opening this week opens the section she is in.
+  const planOpenAt = async (week: number) => {
+    const [el] = findAll(await CoachPage({ params: Promise.resolve({ token: 't' }), searchParams: Promise.resolve({}) }), PlanList) as { props: Parameters<typeof PlanList>[0] }[];
+    if (!el) throw new Error('no PlanList on /r');
+    return renderToString(createElement(PlanList, { ...el.props, initialOpenWeek: week }));
+  };
+  it('the plan: every week is a button and all start closed — no lecture rows until he opens one', async () => {
     const h = await markup();
     const weeks = [...h.matchAll(/<button type="button" aria-expanded="(true|false)" aria-controls="week-(\d+)"/g)];
     expect(weeks.length).toBeGreaterThanOrEqual(8); // the break row is not a button
-    expect(weeks.filter((m) => m[1] === 'true').map((m) => m[2])).toEqual(['3']); // typical (Wed 21 Oct): week 3
+    expect(weeks.filter((m) => m[1] === 'true')).toEqual([]);
+    expect(h).not.toMatch(/aria-controls="week-section-/);
+  });
+  it('an open week shows its Part → section → lecture view', async () => {
+    const h = await planOpenAt(3); // typical (Wed 21 Oct): week 3
     expect(h).toContain('data-week="1"');
     expect(h).toMatch(/<p [^>]*>Part <!-- -->2<\/p>|>Part 2</); // the Part header: overline + title
     expect(h).toContain('2 projects');
     expect(h).not.toContain('§');
   });
-  it('the open week lists its sections (number · title) with the current one open to its lectures', async () => {
-    const h = await markup();
+  it('opening a week opens the section she is in when it is in that week (from the outline, not the row state)', async () => {
+    const h = await planOpenAt(3);
     const current = h.match(/data-section="(\d+)" data-current="true"/);
     expect(current, 'a current section in the open week').not.toBeNull();
     const section = current?.[1] ?? '';
@@ -143,8 +155,8 @@ describe('/r — v4: plan accordion, history by day, folded note, projection, go
     expect(h).toMatch(/aria-expanded="false" aria-controls="week-section-/); // the others stay closed
     expect(h).toContain('she’s here');
   });
-  it('a week that is not open keeps its lectures out of the page', async () => {
-    const h = await markup();
+  it('only the open section renders its lectures', async () => {
+    const h = await planOpenAt(3);
     const open = (h.match(/aria-expanded="true" aria-controls="week-section-/g) ?? []).length;
     expect(open).toBe(1); // only the current section's lectures were rendered
   });

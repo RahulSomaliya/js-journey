@@ -263,12 +263,16 @@ describe('v4 "finished" = snapshot sectionsDone ∪ logs (planGoal, never logs a
 describe('v4 projection — where her CURRENT pace lands', () => {
   const proj = (today: string, snapshot: ProgressSnapshot | null) =>
     computeJourneyStatus({ today, sections: REACT_CURRICULUM, logs: [], config: REACT_PLAN, coachNote: null, snapshot }).projection;
-  it('null without a snapshot, and until 2 elapsed study days have study', () => {
+  // Review 2026-10-12: week 1 is the plan's lightest week (56 min of lectures a study day), so an on-plan
+  // student read "4 weeks after your target" on day 2. Nothing is projected before one full study week.
+  it('null without a snapshot, and until a full study week (5 study days) has elapsed with ≥ 2 days of study', () => {
     expect(proj('2026-10-12', null)).toBeNull();
-    const day1 = { ...WEEK1_SNAPSHOT, days: { '2026-10-05': 7200 } };
-    expect(proj('2026-10-06', day1)).toBeNull(); // Tue morning: one study day with study
-    expect(proj('2026-10-06', { ...day1, days: { ...day1.days, '2026-10-06': 600 } })).not.toBeNull(); // Tue counts once ≥ 5 min
-    expect(proj('2026-10-06', { ...day1, days: { ...day1.days, '2026-10-06': 299 } })).toBeNull();
+    const week = { ...WEEK1_SNAPSHOT, days: { '2026-10-05': 7200, '2026-10-06': 7200, '2026-10-07': 7200, '2026-10-08': 7200 } };
+    expect(proj('2026-10-06', { ...week, days: { '2026-10-05': 7200, '2026-10-06': 600 } })).toBeNull(); // day 2: too early
+    expect(proj('2026-10-09', week)).toBeNull(); // Fri morning: 4 study days elapsed
+    expect(proj('2026-10-09', { ...week, days: { ...week.days, '2026-10-09': 600 } })).not.toBeNull(); // Fri counts once ≥ 5 min
+    expect(proj('2026-10-09', { ...week, days: { ...week.days, '2026-10-09': 299 } })).toBeNull();
+    expect(proj('2026-10-12', { ...WEEK1_SNAPSHOT, days: { '2026-10-05': 7200 } })).toBeNull(); // a week in, one day of study
   });
   it('today counts in the rate only with ≥ 5 min; then the finish counts from tomorrow', () => {
     const studied = { ...WEEK1_SNAPSHOT, days: { ...WEEK1_SNAPSHOT.days, '2026-10-12': 1800 } };

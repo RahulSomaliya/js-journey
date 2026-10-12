@@ -7,7 +7,7 @@ import { todayInTZ } from '@/lib/date';
 import { decodeCursor, type FeedCursor, type FeedUpdate } from '@/lib/feed';
 import { fmtDate, fmtWhen, sectionTag } from '@/lib/format';
 import { outlineFor, weekOutline, type WeekOutline } from '@/lib/outline';
-import { caughtUp, courseHistoryLine, planRows, projectionLine, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
+import { caughtUp, courseHistoryLine, newestStudyDay, planRows, projectionLine, weekView, withNotes, type HistoryItem } from '@/lib/journey-view';
 import { hasNumbers, type Overview } from '@/lib/overview';
 import { COLUMN, PacePill } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -173,8 +173,7 @@ function History({ items, nextCursor, today, newest = false, readOnly = false, q
   lastDayOnly?: boolean;
 }) {
   // Her study day (IST), not when the update arrived: a 00:10 sign-off still belongs to the evening before.
-  const first = items[0];
-  const day = lastDayOnly && first?.kind === 'update' ? first.update.studyDate : null;
+  const day = lastDayOnly ? newestStudyDay(items) : null;
   const inDay = (i: HistoryItem<FeedUpdate>) => day === null || (i.kind === 'update' && i.update.studyDate === day);
   const shown = items.filter(inDay);
   const older = items.filter((i) => !inDay(i));

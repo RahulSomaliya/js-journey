@@ -210,7 +210,10 @@ function weekContentPerStudyDay(today: string, sections: Section[], config: Sche
 //   rate   = counted lecture minutes done ÷ plan study days elapsed from the start through today — today
 //            only once it has ≥ 5 min of study (STREAK_MIN_SECONDS); weekend study adds to `done`, never to the days
 //   finish = ⌈left ÷ rate⌉ study days on, breaks skipped; today is the first of them while she has not studied yet
-// null: no snapshot, fewer than 2 elapsed study days with study (one day's sample is noise), or nothing left.
+// null: no snapshot, before one full study week has elapsed (PROJECTION_MIN_STUDY_DAYS — week 1 is the plan's
+// lightest week, so an on-plan student read "4 weeks after your target" on day 2; review 2026-10-12), fewer
+// than 2 elapsed study days with study (one day's sample is noise), or nothing left.
+export const PROJECTION_MIN_STUDY_DAYS = 5;
 export function planProjection(args: {
   today: string; sections: Section[]; logs: LogEntry[]; config: ScheduleConfig; snapshot: ProgressSnapshot | null; target: string;
 }): Projection | null {
@@ -223,7 +226,7 @@ export function planProjection(args: {
   for (let d = config.startDate; d < today; d = addDays(d, 1)) if (isStudyDay(d, config.breaks) && studied(d)) daysWithStudy++;
   const { done, total } = countedContent(sections, logs, snapshot);
   const left = total - done;
-  if (daysWithStudy < 2 || done <= 0 || left <= 0) return null;
+  if (elapsed < PROJECTION_MIN_STUDY_DAYS || daysWithStudy < 2 || done <= 0 || left <= 0) return null;
   const rate = done / elapsed;
   const studyDaysLeft = Math.ceil(left / rate);
   const finish = addStudyDays(studied(today) ? today : addDays(today, -1), studyDaysLeft, config.breaks);

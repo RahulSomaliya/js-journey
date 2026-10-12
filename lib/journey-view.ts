@@ -166,6 +166,15 @@ export function unreadFromRahul(feed: JourneyFeed): FromRahulItem[] {
 
 export type HistoryItem<U extends StudentUpdate = StudentUpdate> = { kind: 'update'; update: U } | { kind: 'note'; note: CoachMessage };
 
+/** The coach history's default day: the LATEST studyDate among the updates (dates are "YYYY-MM-DD", so they
+ *  compare as strings). Not the first item's: the list is newest by ARRIVAL, and a late backfill for an older
+ *  day once hid yesterday's updates behind "Older updates" (review 2026-10-12). null = no update. */
+export function newestStudyDay(items: HistoryItem[]): string | null {
+  let day: string | null = null;
+  for (const i of items) if (i.kind === 'update' && (day === null || i.update.studyDate > day)) day = i.update.studyDate;
+  return day;
+}
+
 /** "Your updates" with Rahul's standalone notes interleaved by time, newest first. Her page marks a note
  *  read as soon as "From Rahul" shows it, and read notes rendered nowhere — one visit (the email link)
  *  and a note was gone from both her apps. `complete` = these updates reach her oldest one (no older

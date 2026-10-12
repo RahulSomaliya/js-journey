@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { fixtureFeed, fixtureOverview, fixtureUpdates } from '@/lib/fixtures';
 import {
   caughtUp, greeting, moodLabel, paceLabel, planRows, projectionLine, replyContext, snippet, unreadFromRahul, updateFacts, updateWhen, weekView, withNotes, type PlanRow,
+  newestStudyDay,
 } from '@/lib/journey-view';
 import { REACT_PLAN } from '@/lib/config';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
@@ -244,5 +245,19 @@ describe('projectionLine — her finish at her current pace, in words', () => {
       date: 'Fri 27 Nov',
       tail: ', 4 weeks before your target.',
     });
+  });
+});
+
+// Review 2026-10-12: the coach history's "last day" was the studyDate of the item NEWEST BY ARRIVAL; a late
+// backfill for an older day then hid yesterday's updates behind "Older updates".
+describe('newestStudyDay — the coach history shows this day by default', () => {
+  const u = (studyDate: string) => ({ kind: 'update' as const, update: { ...fixtureUpdates('typical')[0]!, studyDate } });
+  it('is the latest studyDate among the items, not the first item\'s', () => {
+    expect(newestStudyDay([u('2026-10-09'), u('2026-10-12'), u('2026-10-12')])).toBe('2026-10-12');
+  });
+  it('ignores notes; null when there is no update', () => {
+    const note = { kind: 'note' as const, note: { id: 'n', body: 'x', createdAt: '2026-10-12T10:00:00Z', readAt: null } };
+    expect(newestStudyDay([note, u('2026-10-08')])).toBe('2026-10-08');
+    expect(newestStudyDay([note])).toBeNull();
   });
 });

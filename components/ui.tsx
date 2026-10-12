@@ -88,3 +88,43 @@ export const CalendarIcon = (p: IconProps) => (
   <Icon {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></Icon>
 );
 export const ChevronDownIcon = (p: IconProps) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
+
+// Marks mirrored from the Course Player (web/src/components/ui.tsx), static: the coach page never animates them.
+const TICK = 'M5.2 9.3l2.4 2.4 5-5.1';
+const tickProps = { fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
+
+/** Lecture rows: done = accent disc + ✓ · current = accent dot · plain = hairline circle. State is also said
+ *  in words by the row (sr-only) — the mark is never the only signal. */
+export function LectureMark({ state, className = 'size-[18px]' }: { state: 'done' | 'current' | 'plain'; className?: string }) {
+  return (
+    <svg viewBox="0 0 18 18" className={`shrink-0 ${className}`} aria-hidden="true">
+      {state === 'done' && (
+        <>
+          <circle cx="9" cy="9" r="9" className="fill-accent" />
+          <path d={TICK} strokeWidth="1.8" {...tickProps} className="stroke-on-accent" />
+        </>
+      )}
+      {state === 'current' && <circle cx="9" cy="9" r="4" className="fill-accent" />}
+      {state === 'plain' && <circle cx="9" cy="9" r="7.25" fill="none" strokeWidth="1.5" className="stroke-line" />}
+    </svg>
+  );
+}
+
+/** A finished section's quiet ✓ (no disc). */
+export function QuietCheck({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 18 18" className={`shrink-0 ${className}`} aria-hidden="true">
+      <path d={TICK} strokeWidth="1.8" {...tickProps} className="stroke-accent" />
+    </svg>
+  );
+}
+
+/** The daily goal's small accent ✓ — above every goal-met chart bar and beside the Today stat
+ *  (docs/spec-v4-pace-and-coach.md "Chart + daily goal" in course-player). No colour transition. */
+export function GoalCheck({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg data-goal-check viewBox="0 0 18 18" className={`shrink-0 ${className}`} aria-hidden="true">
+      <path d={TICK} strokeWidth="2.2" {...tickProps} className="stroke-accent" />
+    </svg>
+  );
+}

@@ -1,10 +1,12 @@
 'use client';
 import { useState, type KeyboardEvent } from 'react';
 import { fmtDate, fmtSeconds, fmtShortDate } from '@/lib/format';
+import { GoalCheck } from '@/components/ui';
 
 // Last 30 days of study time — the Course Player's chart (screens/home/ThirtyDays.tsx), same rules:
-// one series → no legend; bars ≤ 20 px, 4 px rounded tops; today in the accent, other days in
-// `chart-bar`; a hairline average line labelled at its end — in a right gutter (pr-20) OUTSIDE the
+// one series → no legend; bars ≤ 20 px, 4 px rounded tops; a day that met the daily goal (v4) in the
+// accent with a small accent ✓ above it, every other day — today included — in `chart-bar`. NO goal line
+// and nothing marks a short day (Rahul: a missed target must not be shown to her as a miss); a hairline average line labelled at its end — in a right gutter (pr-20) OUTSIDE the
 // plot: drawn inside it, the label's canvas chip sat on today's bar and the one before it, the two that
 // matter most (2026-10-01 review); a hover/focus tooltip ("Tue 29 Sep · 1h 12m"); a visually hidden
 // table carries every value. Bars rise from 25 % of their height on first paint (never from nothing —
@@ -19,7 +21,7 @@ function niceTop(seconds: number): number {
 
 export function ThirtyDays({ days, averageSeconds, today, emptyText }: {
   /** oldest → today, 30 entries (JourneyStats.last30.days) */
-  days: { date: string; seconds: number }[];
+  days: { date: string; seconds: number; met: boolean }[];
   averageSeconds: number;
   today: string;
   emptyText: string;
@@ -63,13 +65,18 @@ export function ThirtyDays({ days, averageSeconds, today, emptyText }: {
 
           <div className="absolute inset-0 flex items-end gap-0.5" aria-hidden="true">
             {days.map((d, i) => {
-              const isToday = d.date === today;
               const on = i === active;
               const h = d.seconds > 0 ? Math.max(pct(d.seconds), 1.5) : 0;
-              const fill = isToday ? (on ? 'bg-accent-hover' : 'bg-accent') : on ? 'bg-chart-bar-hover' : 'bg-chart-bar';
+              const fill = d.met ? (on ? 'bg-accent-hover' : 'bg-accent') : on ? 'bg-chart-bar-hover' : 'bg-chart-bar';
               return (
-                <div key={d.date} data-day={d.date} className="flex h-full flex-1 items-end justify-center" onPointerEnter={() => setActive(i)}>
-                  <div className={`w-full max-w-5 origin-bottom animate-bar-rise rounded-t-sm ${fill}`} style={{ height: `${h}%`, animationDelay: `${i * 12}ms` }} />
+                <div key={d.date} data-day={d.date} data-goal-met={d.met ? 'true' : undefined} className="relative h-full flex-1" onPointerEnter={() => setActive(i)}>
+                  <div className={`absolute inset-x-0 bottom-0 mx-auto w-full max-w-5 origin-bottom animate-bar-rise rounded-t-sm ${fill}`} style={{ height: `${h}%`, animationDelay: `${i * 12}ms` }} />
+                  {/* beside the bar, not inside it: the bar rises with a scaleY that would squash the ✓ */}
+                  {d.met && (
+                    <span className="absolute left-1/2 -translate-x-1/2" style={{ bottom: `calc(${h}% + 2px)` }}>
+                      <GoalCheck className="size-3.5" />
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -108,7 +115,7 @@ export function ThirtyDays({ days, averageSeconds, today, emptyText }: {
           {days.map((d) => (
             <tr key={d.date}>
               <th scope="row">{fmtDate(d.date)}</th>
-              <td>{fmtSeconds(d.seconds)}</td>
+              <td>{fmtSeconds(d.seconds)}{d.met ? ' — daily goal met' : ''}</td>
             </tr>
           ))}
         </tbody>

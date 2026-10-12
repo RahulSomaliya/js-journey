@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStats, percentLabel, streak, STREAK_MIN_SECONDS, type StudyCalendar } from '@/lib/stats';
+import { computeStats, goalMet, percentLabel, streak, studyAverage, STREAK_MIN_SECONDS, type StudyCalendar } from '@/lib/stats';
 import { computeJourneyStatus } from '@/lib/status';
 import { REACT_CURRICULUM } from '@/lib/curriculum';
 import { REACT_PLAN } from '@/lib/config';
@@ -28,8 +28,8 @@ const stats = (now: string, snapshot: ProgressSnapshot | null, logs: LogEntry[] 
 
 describe('computeStats from the player snapshot', () => {
   const s = stats('2026-10-07T10:00:00.000Z', SNAP); // Wed 7 Oct, 15:30 IST
-  it('Today = seconds studied on today\'s IST date', () => {
-    expect(s.today).toEqual({ date: '2026-10-07', seconds: 7200 });
+  it('Today = seconds studied on today\'s IST date (met = at the daily goal, 150 min)', () => {
+    expect(s.today).toEqual({ date: '2026-10-07', seconds: 7200, met: false });
     expect(s.source).toBe('snapshot');
     expect(s.asOf).toBe('2026-10-07T09:55:00.000Z');
   });
@@ -42,12 +42,12 @@ describe('computeStats from the player snapshot', () => {
   it('Due = the course target date + pace from JourneyStatus', () => {
     expect(s.due).toEqual({ date: '2026-12-25', pace: 'on-track', daysDelta: statusOn('2026-10-07').daysDelta, onBreak: null });
   });
-  it('the 30-day series ends today and averages over all 30 days', () => {
+  it('the 30-day series ends today; its average is over her study days since the start (studyAverage)', () => {
     expect(s.last30.days).toHaveLength(30);
-    expect(s.last30.days[0]).toEqual({ date: '2026-09-08', seconds: 0 });
-    expect(s.last30.days[29]).toEqual({ date: '2026-10-07', seconds: 7200 });
+    expect(s.last30.days[0]).toEqual({ date: '2026-09-08', seconds: 0, met: false });
+    expect(s.last30.days[29]).toEqual({ date: '2026-10-07', seconds: 7200, met: false });
     expect(s.last30.days.find((d) => d.date === '2026-10-02')?.seconds).toBe(3600);
-    expect(s.last30.averageSeconds).toBeCloseTo((7200 + 1800 + 250 + 3600) / 30);
+    expect(s.last30.averageSeconds).toBeCloseTo((7200 + 1800 + 250) / 3);
   });
   it('passes the lecture "Continue" points at', () => {
     expect(s.current).toEqual(SNAP.current);
@@ -64,12 +64,12 @@ describe('IST midnight edge', () => {
   const snap = { ...SNAP, days: { '2026-10-05': 3600 } };
   it('23:59:59 IST is still that day (UTC would already be the same date, but…)', () => {
     const s = stats('2026-10-05T18:29:59.000Z', snap);
-    expect(s.today).toEqual({ date: '2026-10-05', seconds: 3600 });
+    expect(s.today).toEqual({ date: '2026-10-05', seconds: 3600, met: false });
     expect(s.streak).toBe(1);
   });
   it('00:00 IST is the next day even though it is still 5 Oct in UTC', () => {
     const s = stats('2026-10-05T18:30:00.000Z', snap, [], '2026-10-06');
-    expect(s.today).toEqual({ date: '2026-10-06', seconds: 0 });
+    expect(s.today).toEqual({ date: '2026-10-06', seconds: 0, met: false });
     expect(s.streak).toBe(1); // today (Tue) is still in progress: Monday's study keeps it alive
     expect(s.last30.days[29].date).toBe('2026-10-06');
   });
@@ -157,9 +157,9 @@ describe('computeStats without a snapshot: falls back to her sessions', () => {
   it('Today / Streak / chart from session minutes per IST study date', () => {
     expect(s.source).toBe('sessions');
     expect(s.asOf).toBeNull();
-    expect(s.today).toEqual({ date: '2026-10-07', seconds: 50 * 60 });
+    expect(s.today).toEqual({ date: '2026-10-07', seconds: 50 * 60, met: false });
     expect(s.streak).toBe(2);
-    expect(s.last30.days[28]).toEqual({ date: '2026-10-06', seconds: 90 * 60 });
+    expect(s.last30.days[28]).toEqual({ date: '2026-10-06', seconds: 90 * 60, met: false });
   });
   it('Complete from finished sections (incl. those finished mid-session) over the course\'s video minutes; lectures = distinct completed', () => {
     // §01 31 + §02 1 + §03 75 = 107 of 4028 video minutes
@@ -185,5 +185,51 @@ describe('computeStats without a snapshot: falls back to her sessions', () => {
 describe('percentLabel (the player\'s Complete figure)', () => {
   it('floors, says <1% for a sliver, caps at 100%', () => {
     expect([0, 0.4, 1, 9.99, 99.9, 100, 100.2].map(percentLabel)).toEqual(['0%', '<1%', '1%', '9%', '99%', '100%', '100%']);
+  });
+});
+
+// v4 (spec-v4 "Chart + daily goal"): the 30-day average divides by the plan's study days since she STARTED —
+// over all 30 days, her 2 h a day in week 1 read "avg 24m". SAME TABLE as course-player web/src/lib/stats.test.ts
+// (studyAverage there) — change both together.
+const H = 3600;
+const AVERAGE_CASES: { name: string; days: Record<string, number>; today: string; start: string | null; want: number }[] = [
+  { name: 'week 1 at 2 h a day reads 2 h, not 24 m', days: { '2026-10-05': 2 * H, '2026-10-06': 2 * H, '2026-10-07': 2 * H, '2026-10-08': 2 * H, '2026-10-09': 2 * H }, today: '2026-10-09', start: '2026-10-05', want: 2 * H },
+  { name: 'today counts once it has 5 min', days: { '2026-10-05': 2 * H, '2026-10-06': 2 * H, '2026-10-07': 300 }, today: '2026-10-07', start: '2026-10-05', want: (4 * H + 300) / 3 },
+  { name: 'today under 5 min: its seconds add, the day does not', days: { '2026-10-05': 2 * H, '2026-10-06': 2.5 * H, '2026-10-07': 240 }, today: '2026-10-07', start: '2026-10-05', want: (4.5 * H + 240) / 2 },
+  { name: 'a missed study day counts as a day', days: { '2026-10-05': 2.5 * H, '2026-10-07': 2.5 * H }, today: '2026-10-07', start: '2026-10-05', want: (5 * H) / 3 },
+  { name: 'weekend study adds to the total, never to the days', days: { '2026-10-09': 2 * H, '2026-10-10': H }, today: '2026-10-12', start: '2026-10-05', want: (3 * H) / 5 },
+  { name: 'study before the start is not counted', days: { '2026-10-02': 3 * H, '2026-10-05': 2 * H }, today: '2026-10-05', start: '2026-10-05', want: 2 * H },
+  { name: 'plan break days are not study days', days: { '2026-10-30': 2.5 * H, '2026-11-16': 2.5 * H }, today: '2026-11-16', start: '2026-10-26', want: (5 * H) / 6 },
+  { name: 'no start date: from the day of her first study (≥ 5 min)', days: { '2026-10-03': 200, '2026-10-06': 2 * H, '2026-10-07': 2 * H }, today: '2026-10-07', start: null, want: 2 * H },
+  { name: 'before the start: 0', days: { '2026-10-03': H }, today: '2026-10-03', start: '2026-10-05', want: 0 },
+  { name: 'nothing studied: 0', days: {}, today: '2026-10-07', start: '2026-10-05', want: 0 },
+  { name: 'only weekend study so far: the total over one day, never ÷ 0', days: { '2026-10-10': H }, today: '2026-10-11', start: null, want: H },
+];
+
+describe('studyAverage (the 30-day chart\'s "avg")', () => {
+  it.each(AVERAGE_CASES)('$name', ({ days, today, start, want }) => {
+    expect(studyAverage(days, today, PLAN, start)).toBeCloseTo(want, 6);
+  });
+  it('computeStats: from the plan\'s start (Mon 5 Oct), not over all 30 days', () => {
+    // SNAP: Wed 7 Oct 7200 (today, counted), Tue 6 1800, Mon 5 250; Fri 2 Oct (before the start) is not
+    expect(stats('2026-10-07T10:00:00.000Z', SNAP).last30.averageSeconds).toBeCloseTo((7200 + 1800 + 250) / 3, 6);
+  });
+});
+
+describe('goalMet — a day with ≥ the plan\'s daily minutes (React: 150)', () => {
+  it('at or over the goal only; no goal known = never met', () => {
+    expect(goalMet(150 * 60, 150)).toBe(true);
+    expect(goalMet(150 * 60 - 1, 150)).toBe(false);
+    expect(goalMet(4 * H, 150)).toBe(true);
+    expect(goalMet(4 * H, undefined)).toBe(false);
+    expect(goalMet(4 * H, 0)).toBe(false);
+  });
+  it('computeStats marks today and every chart day; nothing marks a short day', () => {
+    const snap = { ...SNAP, days: { '2026-10-05': 9000, '2026-10-06': 8999, '2026-10-07': 9600 } };
+    const s = stats('2026-10-07T10:00:00.000Z', snap);
+    expect(s.dailyGoalMinutes).toBe(150);
+    expect(s.today).toEqual({ date: '2026-10-07', seconds: 9600, met: true });
+    expect(s.last30.days.filter((d) => d.met).map((d) => d.date)).toEqual(['2026-10-05', '2026-10-07']);
+    expect(stats('2026-10-06T10:00:00.000Z', snap, [], '2026-10-06').today).toEqual({ date: '2026-10-06', seconds: 8999, met: false });
   });
 });

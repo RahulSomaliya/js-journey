@@ -26,6 +26,9 @@
   --on-accent: oklch(0.99 0.005 80);
   --accent-ink: oklch(0.48 0.15 40);
   --accent-soft: oklch(0.95 0.035 55);
+  /* pace pill "Ahead" / "On track": a calm green = success (Rahul, 2026-10-12: orange read as a warning) */
+  --success-ink: oklch(0.45 0.1 155);
+  --success-soft: oklch(0.95 0.04 155);
   /* 0.65, not the player's 0.66: that measures 2.98:1 on canvas, under the 3:1 non-text minimum */
   --chart-bar: oklch(0.65 0.012 70);
   --chart-bar-hover: oklch(0.56 0.012 70);
@@ -51,6 +54,8 @@
     --on-accent: oklch(0.18 0.02 50);
     --accent-ink: oklch(0.8 0.13 55);
     --accent-soft: oklch(0.29 0.05 50);
+    --success-ink: oklch(0.82 0.11 155);
+    --success-soft: oklch(0.29 0.05 155);
     --chart-bar: oklch(0.52 0.01 75);
     --chart-bar-hover: oklch(0.62 0.01 75);
     --ring: oklch(0.72 0.16 50);
@@ -75,6 +80,8 @@
   --on-accent: oklch(0.18 0.02 50);
   --accent-ink: oklch(0.8 0.13 55);
   --accent-soft: oklch(0.29 0.05 50);
+  --success-ink: oklch(0.82 0.11 155);
+  --success-soft: oklch(0.29 0.05 155);
   --chart-bar: oklch(0.52 0.01 75);
   --chart-bar-hover: oklch(0.62 0.01 75);
   --ring: oklch(0.72 0.16 50);
@@ -100,6 +107,8 @@
   --color-on-accent: var(--on-accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
+  --color-success-ink: var(--success-ink);
+  --color-success-soft: var(--success-soft);
   --color-chart-bar: var(--chart-bar);
   --color-chart-bar-hover: var(--chart-bar-hover);
   --color-ring: var(--ring);

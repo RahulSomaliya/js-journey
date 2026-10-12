@@ -37,7 +37,7 @@ export function SectionHeading({ id, title, meta }: { id: string; title: string;
 /** Pace: ahead / on track = accent pill; behind = a quiet fill pill (honest, never alarm red). */
 export function PacePill({ label, tone }: { label: string; tone: 'good' | 'quiet' }) {
   return (
-    <span className={`inline-flex h-7 items-center rounded-full px-3 text-sm font-medium ${tone === 'good' ? 'bg-accent-soft text-accent-ink' : 'bg-fill text-ink'}`}>
+    <span className={`inline-flex h-7 items-center rounded-full px-3 text-sm font-medium ${tone === 'good' ? 'bg-success-soft text-success-ink' : 'bg-fill text-ink'}`}>
       {label}
     </span>
   );
